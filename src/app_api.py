@@ -140,7 +140,7 @@ class NehaAPIHandler(BaseHTTPRequestHandler):
         allowed = (
             "/chat", "/auth/signup", "/auth/login", "/memory/save", "/memory/load",
             "/owner/login", "/owner/logout", "/owner/recovery/enroll",
-            "/owner/recovery/activate", "/owner/password/reset",
+            "/owner/recovery/activate", "/owner/recovery/confirm", "/owner/password/reset",
             "/actions/approve", "/actions/execute",
         )
         if self.path not in allowed:
@@ -191,6 +191,17 @@ class NehaAPIHandler(BaseHTTPRequestHandler):
                 self.send_json(400, {"success": False, "error": str(exc)})
             except Exception:
                 self.send_json(500, {"success": False, "error": "Recovery enrollment failed safely"})
+            return
+
+        if self.path == "/owner/recovery/confirm":
+            secret = payload.get("recovery_secret")
+            try:
+                if owner_auth.confirm_recovery_rotation(secret):
+                    self.send_json(200, {"success": True, "message": "Recovery credential rotation confirmed."})
+                else:
+                    self.send_json(401, {"success": False, "error": "Recovery rotation confirmation failed"})
+            except Exception:
+                self.send_json(500, {"success": False, "error": "Recovery rotation confirmation failed safely"})
             return
 
         if self.path == "/owner/password/reset":
