@@ -166,15 +166,33 @@ export default function ActionsScreen() {
       if (!response.ok || !data.success || !data.recovery_secret) {
         throw new Error(data.error || 'Password reset failed or recovery could not be renewed.');
       }
-      // Store the replacement under Android biometric protection for the next reset.
+      // Save first. The server keeps the previous secret valid until this succeeds
+      // and the app confirms the saved replacement.
       await SecureStore.setItemAsync(RECOVERY_KEY, data.recovery_secret, RECOVERY_OPTIONS);
+
+      let rotationConfirmed = false;
+      try {
+        const confirmationResponse = await fetch(`${API_URL}/owner/recovery/confirm`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ recovery_secret: data.recovery_secret }),
+        });
+        const confirmation = await confirmationResponse.json();
+        rotationConfirmed = confirmationResponse.ok && confirmation.success === true;
+      } catch {
+        // The saved pending secret remains accepted by the server. Confirmation
+        // can safely be retried by the next successful recovery rotation.
+      }
+
       await SecureStore.deleteItemAsync(TOKEN_KEY);
       setToken(null);
       setActions([]);
       setPassword('');
       setNewPassword('');
       setConfirmNewPassword('');
-      setMessage('Password changed successfully. Sign in using your new password.');
+      setMessage(rotationConfirmed
+        ? 'Password changed. Your new biometric recovery credential is saved and confirmed.'
+        : 'Password changed and new biometric credential saved. Server confirmation is pending; the saved credential remains usable.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Biometric password reset failed.');
     } finally {
