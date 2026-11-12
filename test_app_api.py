@@ -62,9 +62,9 @@ class ActionAPIIntegrationTests(unittest.TestCase):
             response = error
         return response.code, json.loads(response.read().decode())
 
-    def login(self):
+    def login(self, password="a-strong-test-password"):
         status, result = self.request("POST", "/owner/login", {
-            "username": "test-owner", "password": "a-strong-test-password"
+            "username": "test-owner", "password": password
         })
         self.assertEqual(status, 200)
         return result["access_token"]
@@ -101,6 +101,42 @@ class ActionAPIIntegrationTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(replay["status"], "approval_invalid")
         self.assertEqual(self.calls, ["ran"])
+
+    def test_biometric_recovery_enrollment_requires_owner_session(self):
+        status, _ = self.request("POST", "/owner/recovery/enroll", {})
+        self.assertEqual(status, 401)
+
+    def test_biometric_recovery_can_reset_password_and_preserve_owner(self):
+        owner_id = self.auth.owner_id
+        token = self.login()
+        status, prepared = self.request("POST", "/owner/recovery/enroll", {}, token)
+        self.assertEqual(status, 200)
+        secret = prepared["recovery_secret"]
+
+        status, activated = self.request(
+            "POST", "/owner/recovery/activate", {"recovery_secret": secret}, token
+        )
+        self.assertEqual(status, 200)
+        self.assertTrue(activated["success"])
+
+        status, reset = self.request("POST", "/owner/password/reset", {
+            "recovery_secret": secret, "new_password": "new-test-owner-password"
+        })
+        self.assertEqual(status, 200)
+        self.assertTrue(reset["success"])
+        self.assertEqual(self.auth.owner_id, owner_id)
+        self.assertIsNone(self.auth.verify_session(token))
+        self.login(password="new-test-owner-password")
+
+    def test_wrong_biometric_recovery_secret_is_rejected(self):
+        self.assertEqual(self.auth.owner_id, self.auth.owner_id)
+        status, result = self.request("POST", "/owner/password/reset", {
+            "recovery_secret": "wrong-recovery-secret-value-that-is-long-enough",
+            "new_password": "new-test-owner-password",
+        })
+        self.assertEqual(status, 401)
+        self.assertFalse(result["success"])
+        self.assertIsNotNone(self.auth.login("test-owner", "a-strong-test-password"))
 
     def test_logout_revokes_owner_session(self):
         token = self.login()
