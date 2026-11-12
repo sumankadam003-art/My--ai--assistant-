@@ -61,6 +61,8 @@ class AuthorizedActionService:
             arguments = {}
         if not isinstance(arguments, Mapping):
             raise ValueError("Action arguments must be an object.")
+        if arguments:
+            raise ValueError("Existing plugin actions do not accept arguments yet.")
         token = self._approval_store.issue(action, arguments, owner["id"])
         return {
             "success": True,
@@ -74,11 +76,11 @@ class AuthorizedActionService:
         owner = self._owner_authorizer.authenticate_owner(access_token)
         if arguments is None:
             arguments = {}
-        if not isinstance(arguments, Mapping):
+        if not isinstance(arguments, Mapping) or arguments:
             return {
                 "success": False,
                 "status": "invalid_arguments",
-                "message": "Action arguments must be an object.",
+                "message": "Existing plugin actions currently accept no arguments.",
             }
         if not isinstance(approval_token, str) or not approval_token:
             return {
