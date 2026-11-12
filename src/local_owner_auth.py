@@ -32,6 +32,10 @@ class LocalOwnerAuth:
     def is_configured(self):
         return self.path.is_file()
 
+    @property
+    def owner_id(self):
+        return self._read_record()["owner_id"]
+
     def setup(self, username, password):
         username = self._validate_username(username)
         if not isinstance(password, str) or len(password) < 12 or len(password) > 1024:
