@@ -1,8 +1,8 @@
-"""Owner identity and one-time action approval primitives for Neha.
+"""Neha's backend identity and one-time action approval primitives.
 
-This module does not expose an HTTP endpoint. The API layer must authenticate
-the bearer token with Supabase, call OwnerAuthorizer, then issue/consume an
-approval through ApprovalStore. Never derive approval from model output.
+The backend acts as the configured Neha instance. Approval receipts are
+single-use and short-lived; approval must originate from an explicit UI
+confirmation, never from model output.
 """
 from dataclasses import dataclass
 import hashlib
@@ -21,16 +21,19 @@ class OwnerAuthorizer:
     def __init__(
         self,
         owner_user_id: str,
-        session_verifier: Callable[[str], Optional[Mapping]],
+        session_verifier: Optional[Callable[[str], Optional[Mapping]]] = None,
     ):
         if not isinstance(owner_user_id, str) or not owner_user_id.strip():
             raise ValueError("A configured owner user ID is required.")
-        if not callable(session_verifier):
-            raise TypeError("A Supabase session verifier is required.")
+        if session_verifier is not None and not callable(session_verifier):
+            raise TypeError("Session verifier must be callable when provided.")
         self._owner_user_id = owner_user_id.strip()
         self._session_verifier = session_verifier
 
-    def authenticate_owner(self, access_token: str) -> Mapping:
+    def authenticate_owner(self, access_token: Optional[str] = None) -> Mapping:
+        # No end-user login is used. The backend identity is fixed at startup.
+        if self._session_verifier is None:
+            return {"id": self._owner_user_id}
         if not isinstance(access_token, str) or not access_token.strip():
             raise AuthorizationError("A valid login session is required.")
         try:
