@@ -81,7 +81,12 @@ class LocalOwnerAuth:
             raise OwnerAccountError("Owner account is missing or unreadable.")
 
     def login(self, username, password):
-        if not isinstance(username, str) or not isinstance(password, str):
+        if (
+            not isinstance(username, str)
+            or not isinstance(password, str)
+            or len(username) > 64
+            or not 1 <= len(password) <= 1024
+        ):
             return None
         record = self._read_record()
         try:
