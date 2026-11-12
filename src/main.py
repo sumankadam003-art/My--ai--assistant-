@@ -1,11 +1,7 @@
 from intent_interpreter import interpret_request
 from actions import run_action
 from plugin_manager import ActionPluginManager
-import os
-from getpass import getpass
-from cloud_auth import sign_in, get_authenticated_user
-from cloud_memory import save_cloud_memory, load_cloud_memories
-from memory_sync import save_memory_safely, sync_pending_memories, sync_all_local_memories
+from memory_sync import save_memory_safely
 from neha_gateway import NehaGateway
 from web_search import web_search
 from voice import listen, speak
@@ -72,8 +68,6 @@ def main():
             permission, True,
             "device" if permission.startswith("device.") else "apps"
         )
-    cloud_user_id = None
-    cloud_access_token = None
     print("My AI Assistant — Multi-Brain Core")
     print("Type 'exit' to quit.")
     history = load_history()
@@ -98,71 +92,6 @@ def main():
         if prompt.lower() in ("exit", "quit"):
             break
 
-        if prompt.lower() == "/login":
-            email = input("Supabase email: ").strip()
-            password = getpass("Supabase password (hidden): ")
-
-            try:
-                try:
-                    result = sign_in(email, password)
-                except Exception as e:
-                    print(f"Neha: Cloud login failed: {e}")
-                    continue
-            finally:
-                del password
-
-            if not isinstance(result, dict):
-                print("Neha: Login failed. Invalid authentication response.")
-                continue
-
-            if (
-                result.get("success")
-                and isinstance(result.get("access_token"), str)
-                and result.get("access_token")
-            ):
-                token = result["access_token"]
-
-                try:
-                    user = get_authenticated_user(token)
-                except Exception as e:
-                    print(f"Neha: Session validation failed: {e}")
-                    continue
-
-                if (
-                    isinstance(user, dict)
-                    and user.get("id")
-                    and user.get("id") == result.get("user_id")
-                ):
-                    cloud_user_id = user["id"]
-                    cloud_access_token = token
-                    print("Neha: Cloud memory login successful.")
-                    synced = sync_pending_memories(
-                        cloud_user_id, cloud_access_token
-                    )
-                    if synced:
-                        print(f"Neha: Synced {synced} pending memor{'y' if synced == 1 else 'ies'} to cloud.")
-                    full_synced = sync_all_local_memories(
-                        cloud_user_id, cloud_access_token
-                    )
-                    if full_synced:
-                        print(
-                            f"Neha: Backed up {full_synced} additional local "
-                            f"memor{'y' if full_synced == 1 else 'ies'} to cloud."
-                        )
-                else:
-                    print("Neha: Session validation failed. Please try /login again.")
-            elif result.get("email_confirmation_required"):
-                print("Neha: Confirm your email, then try /login again.")
-            else:
-                print("Neha: Login failed. Check your credentials and Supabase settings.")
-            continue
-
-        if prompt.lower() == "/logout":
-            cloud_user_id = None
-            cloud_access_token = None
-            print("Neha: Logged out of cloud memory. Local memory is unchanged.")
-            continue
-
         if prompt == "/memories":
             for i, fact in enumerate(load_memories(), 1):
                 print(f"{i}. {fact}")
@@ -171,11 +100,7 @@ def main():
         if prompt == "/remember":
             fact = input("Memory to save: ").strip()
             if fact and input("Save memory? (y/yes/no): ").strip().lower() in ("y", "yes"):
-                status = save_memory_safely(
-                    fact,
-                    user_id=cloud_user_id,
-                    access_token=cloud_access_token,
-                )
+                status = save_memory_safely(fact)
                 messages = {
                     "cloud": "Saved to cloud.",
                     "cloud_local_failed": "Saved to cloud, but local backup failed.",
@@ -303,11 +228,7 @@ def main():
 
         if prompt:
             try:
-                answer = manager.ask(
-                    prompt, history,
-                    user_id=cloud_user_id,
-                    access_token=cloud_access_token,
-                )
+                answer = manager.ask(prompt, history)
             except Exception as e:
                 print(f"Neha: I couldn't get an AI response. Please try again. ({e})")
                 continue
@@ -343,11 +264,7 @@ def main():
                     if fact not in load_memories():
                         print(f"Neha suggests saving: {fact}")
                         if input("Save this memory? (y/n): ").strip().lower() in ("y", "yes"):
-                            status = save_memory_safely(
-                                fact,
-                                user_id=cloud_user_id,
-                                access_token=cloud_access_token,
-                            )
+                            status = save_memory_safely(fact)
                             messages = {
                                 "cloud": "Saved to cloud and locally.",
                                 "cloud_local_failed": "Saved to cloud, but local backup failed.",
