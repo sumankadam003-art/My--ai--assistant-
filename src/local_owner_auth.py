@@ -187,6 +187,8 @@ class LocalOwnerAuth:
             record["salt"] = salt.hex()
             record["iterations"] = self.ITERATIONS
             record["password_hash"] = self._derive(new_password, salt, self.ITERATIONS).hex()
+            # Recovery credentials are single-use: invalidate before reporting success.
+            record.pop("recovery_secret_hash", None)
             self._write_record(record)
             self._sessions.clear()
             self._pending_recovery.clear()
