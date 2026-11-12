@@ -106,7 +106,7 @@ class ActionAPIIntegrationTests(unittest.TestCase):
         status, _ = self.request("POST", "/owner/recovery/enroll", {})
         self.assertEqual(status, 401)
 
-    def test_biometric_recovery_can_reset_password_and_preserve_owner(self):
+    def test_biometric_recovery_can_retry_if_client_does_not_save_replacement(self):
         owner_id = self.auth.owner_id
         token = self.login()
         status, prepared = self.request("POST", "/owner/recovery/enroll", {}, token)
@@ -119,33 +119,56 @@ class ActionAPIIntegrationTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertTrue(activated["success"])
 
-        status, reset = self.request("POST", "/owner/password/reset", {
+        status, first_reset = self.request("POST", "/owner/password/reset", {
             "recovery_secret": secret, "new_password": "new-test-owner-password"
         })
         self.assertEqual(status, 200)
-        self.assertTrue(reset["success"])
-        replacement_secret = reset["recovery_secret"]
-        self.assertTrue(replacement_secret)
-        self.assertNotEqual(replacement_secret, secret)
+        first_replacement = first_reset["recovery_secret"]
+        self.assertTrue(first_replacement)
         self.assertEqual(self.auth.owner_id, owner_id)
         self.assertIsNone(self.auth.verify_session(token))
         self.login(password="new-test-owner-password")
 
-        # The replacement credential supports a later reset as well.
-        status, next_reset = self.request("POST", "/owner/password/reset", {
-            "recovery_secret": replacement_secret,
+        # Simulate SecureStore failing: no confirmation is sent, so the old
+        # credential remains usable and can obtain another replacement.
+        status, second_reset = self.request("POST", "/owner/password/reset", {
+            "recovery_secret": secret,
             "new_password": "another-test-owner-password"
         })
         self.assertEqual(status, 200)
-        self.assertTrue(next_reset["success"])
-        self.assertNotEqual(next_reset["recovery_secret"], replacement_secret)
-        status, replay = self.request("POST", "/owner/password/reset", {
-            "recovery_secret": replacement_secret,
-            "new_password": "third-test-owner-password"
+        second_replacement = second_reset["recovery_secret"]
+        self.assertNotEqual(second_replacement, first_replacement)
+
+        status, confirmed = self.request("POST", "/owner/recovery/confirm", {
+            "recovery_secret": second_replacement
+        })
+        self.assertEqual(status, 200)
+        self.assertTrue(confirmed["success"])
+
+        status, old_replay = self.request("POST", "/owner/password/reset", {
+            "recovery_secret": secret, "new_password": "third-test-owner-password"
         })
         self.assertEqual(status, 401)
-        self.assertFalse(replay["success"])
-        self.login(password="another-test-owner-password")
+        self.assertFalse(old_replay["success"])
+        status, unconfirmed_replay = self.request("POST", "/owner/password/reset", {
+            "recovery_secret": first_replacement, "new_password": "third-test-owner-password"
+        })
+        self.assertEqual(status, 401)
+        self.assertFalse(unconfirmed_replay["success"])
+
+        # The confirmed replacement supports the next reset and confirmation.
+        status, next_reset = self.request("POST", "/owner/password/reset", {
+            "recovery_secret": second_replacement,
+            "new_password": "third-test-owner-password"
+        })
+        self.assertEqual(status, 200)
+        next_replacement = next_reset["recovery_secret"]
+        status, next_confirmed = self.request("POST", "/owner/recovery/confirm", {
+            "recovery_secret": next_replacement
+        })
+        self.assertEqual(status, 200)
+        self.assertTrue(next_confirmed["success"])
+        self.login(password="third-test-owner-password")
 
     def test_wrong_biometric_recovery_secret_is_rejected(self):
         status, result = self.request("POST", "/owner/password/reset", {
