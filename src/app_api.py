@@ -67,6 +67,7 @@ class LoginRateLimiter:
 
 
 owner_login_limiter = LoginRateLimiter()
+owner_recovery_limiter = LoginRateLimiter()
 
 
 class NehaAPIHandler(BaseHTTPRequestHandler):
@@ -105,7 +106,9 @@ class NehaAPIHandler(BaseHTTPRequestHandler):
             return None, None
         try:
             service = get_action_service()
-            owner_auth.verify_session(token)
+            if not owner_auth.verify_session(token):
+                self.send_json(401, {"success": False, "error": "Invalid or expired owner session"})
+                return None, None
             return service, token
         except (OwnerAccountError, ActionServiceConfigurationError):
             self.send_json(503, {"success": False, "error": "Local owner account is not configured"})
@@ -134,8 +137,12 @@ class NehaAPIHandler(BaseHTTPRequestHandler):
         self.send_json(404, {"error": "Not found"})
 
     def do_POST(self):
-        allowed = ("/chat", "/auth/signup", "/auth/login", "/memory/save", "/memory/load",
-                   "/owner/login", "/owner/logout", "/actions/approve", "/actions/execute")
+        allowed = (
+            "/chat", "/auth/signup", "/auth/login", "/memory/save", "/memory/load",
+            "/owner/login", "/owner/logout", "/owner/recovery/enroll",
+            "/owner/recovery/activate", "/owner/password/reset",
+            "/actions/approve", "/actions/execute",
+        )
         if self.path not in allowed:
             self.send_json(404, {"error": "Not found"})
             return
@@ -166,12 +173,51 @@ class NehaAPIHandler(BaseHTTPRequestHandler):
             self.send_json(200, {"success": True, **result})
             return
 
+        if self.path in ("/owner/recovery/enroll", "/owner/recovery/activate"):
+            token = self.bearer_token()
+            if not token or not owner_auth.verify_session(token):
+                self.send_json(401, {"success": False, "error": "Valid owner login is required"})
+                return
+            try:
+                if self.path == "/owner/recovery/enroll":
+                    secret = owner_auth.begin_recovery_enrollment(token)
+                    self.send_json(200, {"success": True, "recovery_secret": secret})
+                else:
+                    if owner_auth.activate_recovery_enrollment(token, payload.get("recovery_secret")):
+                        self.send_json(200, {"success": True})
+                    else:
+                        self.send_json(400, {"success": False, "error": "Recovery enrollment failed"})
+            except OwnerAccountError as exc:
+                self.send_json(400, {"success": False, "error": str(exc)})
+            except Exception:
+                self.send_json(500, {"success": False, "error": "Recovery enrollment failed safely"})
+            return
+
+        if self.path == "/owner/password/reset":
+            key = self.client_address[0]
+            if not owner_recovery_limiter.allowed(key):
+                self.send_json(429, {"success": False, "error": "Too many recovery attempts. Try again later."})
+                return
+            secret, new_password = payload.get("recovery_secret"), payload.get("new_password")
+            try:
+                if owner_auth.reset_password_with_recovery(secret, new_password):
+                    owner_recovery_limiter.clear(key)
+                    self.send_json(200, {"success": True, "message": "Owner password updated. Please log in again."})
+                else:
+                    owner_recovery_limiter.record_failure(key)
+                    self.send_json(401, {"success": False, "error": "Biometric recovery verification failed"})
+            except OwnerAccountError as exc:
+                self.send_json(400, {"success": False, "error": str(exc)})
+            except Exception:
+                self.send_json(500, {"success": False, "error": "Password reset failed safely"})
+            return
+
         if self.path == "/owner/logout":
             token = self.bearer_token()
             if not token or not owner_auth.logout(token):
                 self.send_json(401, {"success": False, "error": "Invalid or expired owner session"})
-                return
-            self.send_json(200, {"success": True})
+            else:
+                self.send_json(200, {"success": True})
             return
 
         if self.path in ("/actions/approve", "/actions/execute"):
