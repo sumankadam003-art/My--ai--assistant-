@@ -73,10 +73,10 @@ export default function ActionsScreen() {
       if (!response.ok || !data.success || !data.access_token) {
         throw new Error(data.error || 'Owner login failed.');
       }
+      await loadActions(data.access_token);
       await SecureStore.setItemAsync(TOKEN_KEY, data.access_token);
       setToken(data.access_token);
       setPassword('');
-      await loadActions(data.access_token);
       setMessage('Owner session active. Choose an action to review.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Owner login failed.');
