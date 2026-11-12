@@ -176,7 +176,9 @@ class NehaAPIHandler(BaseHTTPRequestHandler):
                     return
                 try:
                     self.send_json(200, service.request_approval(token, action, arguments))
-                except (AuthorizationError, ValueError) as exc:
+                except AuthorizationError:
+                    self.send_json(401, {"success": False, "error": "Invalid or expired owner session"})
+                except ValueError as exc:
                     self.send_json(400, {"success": False, "error": str(exc)})
                 except Exception:
                     self.send_json(500, {"success": False, "error": "Approval could not be issued"})
