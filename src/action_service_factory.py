@@ -12,13 +12,11 @@ try:
     from .action_authorization import ApprovalStore, OwnerAuthorizer
     from .action_engine_bridge import ActionEngineBridge
     from .authorized_action_service import AuthorizedActionService
-    from .local_owner_auth import LocalOwnerAuth
 except ImportError:  # Supports the project's src-on-PYTHONPATH layout.
     from action_audit import JsonlActionAudit
     from action_authorization import ApprovalStore, OwnerAuthorizer
     from action_engine_bridge import ActionEngineBridge
     from authorized_action_service import AuthorizedActionService
-    from local_owner_auth import LocalOwnerAuth
 
 
 _PERMISSION_PATTERN = re.compile(
@@ -84,36 +82,27 @@ def build_authorized_action_service(
     *,
     environ: Optional[Mapping[str, str]] = None,
     session_verifier: Optional[Callable] = None,
-    owner_auth: Optional[LocalOwnerAuth] = None,
+    owner_auth=None,
     audit_path: str = "data/action_audit.jsonl",
     approval_ttl_seconds: int = 120,
 ):
-    """Build the service using configured owner identity and explicit grants.
+    """Build the action service under Neha's fixed backend identity.
 
-    The caller must still collect explicit owner consent in its UI before
-    calling request_approval. This factory does not expose HTTP endpoints.
+    No end-user login is required. The API must be bound to localhost and
+    the UI must obtain explicit confirmation before requesting approval.
     """
     config = os.environ if environ is None else environ
-    if owner_auth is not None:
-        local_auth = owner_auth
-    elif session_verifier is not None and config.get("NEHA_OWNER_USER_ID"):
-        # Explicit dependency injection supports isolated tests and controlled
-        # integrations; normal application use relies on the local owner file.
-        local_auth = None
-    else:
-        local_auth = LocalOwnerAuth()
+    owner_user_id = config.get("NEHA_ACTION_OWNER_ID") or config.get("NEHA_CLOUD_OWNER_ID", "")
+    if not isinstance(owner_user_id, str) or not owner_user_id.strip():
+        raise ActionServiceConfigurationError(
+            "Set NEHA_ACTION_OWNER_ID (or NEHA_CLOUD_OWNER_ID) for Neha's backend identity."
+        )
 
-    if local_auth is not None:
-        if not local_auth.is_configured():
-            raise ActionServiceConfigurationError(
-                "Neha owner account is not configured; run python -m src.setup_owner."
-            )
-        owner_user_id = local_auth.owner_id
-        verifier = session_verifier or local_auth.verify_session
+    # owner_auth is retained only as a compatibility injection point for older tests.
+    if owner_auth is not None:
+        owner_user_id = owner_auth.owner_id
+        verifier = owner_auth.verify_session
     else:
-        owner_user_id = config.get("NEHA_OWNER_USER_ID", "")
-        if not isinstance(owner_user_id, str) or not owner_user_id.strip():
-            raise ActionServiceConfigurationError("Owner identity is not configured.")
         verifier = session_verifier
 
     policy = PermissionPolicy.from_environment(owner_user_id, config)
