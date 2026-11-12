@@ -129,7 +129,6 @@ class ActionAPIIntegrationTests(unittest.TestCase):
         self.login(password="new-test-owner-password")
 
     def test_wrong_biometric_recovery_secret_is_rejected(self):
-        self.assertEqual(self.auth.owner_id, self.auth.owner_id)
         status, result = self.request("POST", "/owner/password/reset", {
             "recovery_secret": "wrong-recovery-secret-value-that-is-long-enough",
             "new_password": "new-test-owner-password",
