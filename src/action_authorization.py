@@ -70,6 +70,10 @@ class ApprovalStore:
         self._pending = {}
         self._lock = threading.Lock()
 
+    @property
+    def ttl_seconds(self):
+        return self._ttl
+
     @staticmethod
     def _argument_digest(arguments):
         if not isinstance(arguments, Mapping):
