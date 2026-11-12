@@ -96,6 +96,9 @@ export default function ActionsScreen() {
     if (!token || !API_URL) return;
     setBusy(true);
     try {
+      if (!SecureStore.canUseBiometricAuthentication()) {
+        throw new Error('This Android device has no enrolled biometric method supported for protected recovery.');
+      }
       const preparedResponse = await fetch(`${API_URL}/owner/recovery/enroll`, {
         method: 'POST',
         headers: {
