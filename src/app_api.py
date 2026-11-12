@@ -200,9 +200,14 @@ class NehaAPIHandler(BaseHTTPRequestHandler):
                 return
             secret, new_password = payload.get("recovery_secret"), payload.get("new_password")
             try:
-                if owner_auth.reset_password_with_recovery(secret, new_password):
+                replacement_secret = owner_auth.reset_password_with_recovery(secret, new_password)
+                if replacement_secret:
                     owner_recovery_limiter.clear(key)
-                    self.send_json(200, {"success": True, "message": "Owner password updated. Please log in again."})
+                    self.send_json(200, {
+                        "success": True,
+                        "message": "Owner password updated. Biometric recovery remains enabled.",
+                        "recovery_secret": replacement_secret,
+                    })
                 else:
                     owner_recovery_limiter.record_failure(key)
                     self.send_json(401, {"success": False, "error": "Biometric recovery verification failed"})
