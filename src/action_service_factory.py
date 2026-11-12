@@ -22,7 +22,7 @@ except ImportError:  # Supports the project's src-on-PYTHONPATH layout.
 
 
 _PERMISSION_PATTERN = re.compile(
-    r"^[a-z][a-z0-9]*(?:\\.[a-z][a-z0-9_]*)+$"
+    r"^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9_]*)+$"
 )
 
 
