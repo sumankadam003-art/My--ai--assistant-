@@ -72,6 +72,10 @@ class LocalOwnerAuthTests(unittest.TestCase):
         self.assertIsNone(self.auth.verify_session(session))
         self.assertIsNone(self.auth.login("govind-owner", "correct horse battery staple"))
         self.assertIsNotNone(self.auth.login("govind-owner", "a-new-strong-password"))
+        self.assertFalse(self.auth.reset_password_with_recovery(
+            recovery_secret, "another-new-strong-password"
+        ))
+        self.assertNotIn("recovery_secret_hash", json.loads(self.path.read_text()))
 
     def test_wrong_recovery_secret_cannot_reset_password(self):
         self.auth.setup("govind-owner", "correct horse battery staple")
