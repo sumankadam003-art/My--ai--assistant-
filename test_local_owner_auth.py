@@ -54,41 +54,54 @@ class LocalOwnerAuthTests(unittest.TestCase):
         self.assertIsNone(self.auth.login("govind-owner", "x" * 1025))
         self.assertIsNone(self.auth.login("x" * 65, "correct horse battery staple"))
 
-    def test_biometric_recovery_resets_password_without_changing_owner_id(self):
+    def test_biometric_recovery_rotation_waits_for_client_confirmation(self):
         self.auth.setup("govind-owner", "correct horse battery staple")
         owner_id = self.auth.owner_id
         session = self.auth.login("govind-owner", "correct horse battery staple")["access_token"]
         recovery_secret = self.auth.begin_recovery_enrollment(session)
         self.auth.activate_recovery_enrollment(session, recovery_secret)
 
-        record = json.loads(self.path.read_text())
-        self.assertNotEqual(record["recovery_secret_hash"], recovery_secret)
-        self.assertEqual(record["owner_id"], owner_id)
-
-        replacement_secret = self.auth.reset_password_with_recovery(
+        first_replacement = self.auth.reset_password_with_recovery(
             recovery_secret, "a-new-strong-password"
         )
-        self.assertTrue(replacement_secret)
-        self.assertNotEqual(replacement_secret, recovery_secret)
+        self.assertTrue(first_replacement)
+        self.assertNotEqual(first_replacement, recovery_secret)
         self.assertEqual(self.auth.owner_id, owner_id)
         self.assertIsNone(self.auth.verify_session(session))
-        self.assertIsNone(self.auth.login("govind-owner", "correct horse battery staple"))
         self.assertIsNotNone(self.auth.login("govind-owner", "a-new-strong-password"))
 
-        # The rotated credential supports the next forgotten-password event.
+        # Simulate Android failing to save the first replacement: the old
+        # credential must remain usable so recovery is not permanently lost.
+        second_replacement = self.auth.reset_password_with_recovery(
+            recovery_secret, "another-new-strong-password"
+        )
+        self.assertTrue(second_replacement)
+        self.assertNotEqual(second_replacement, first_replacement)
+        self.assertTrue(self.auth.confirm_recovery_rotation(second_replacement))
+
+        record = json.loads(self.path.read_text())
+        self.assertEqual(
+            record["recovery_secret_hash"], self.auth._recovery_digest(second_replacement)
+        )
+        self.assertNotIn("pending_recovery_secret_hash", record)
+        self.assertFalse(self.auth.confirm_recovery_rotation(first_replacement))
+        self.assertFalse(self.auth.reset_password_with_recovery(
+            recovery_secret, "third-new-strong-password"
+        ))
+        self.assertFalse(self.auth.reset_password_with_recovery(
+            first_replacement, "third-new-strong-password"
+        ))
+
+        # A confirmed replacement can be used repeatedly after each confirmation.
         next_secret = self.auth.reset_password_with_recovery(
-            replacement_secret, "another-new-strong-password"
+            second_replacement, "third-new-strong-password"
         )
         self.assertTrue(next_secret)
-        self.assertNotEqual(next_secret, replacement_secret)
+        self.assertTrue(self.auth.confirm_recovery_rotation(next_secret))
         self.assertFalse(self.auth.reset_password_with_recovery(
-            replacement_secret, "third-new-strong-password"
+            second_replacement, "fourth-new-strong-password"
         ))
-        self.assertIsNotNone(self.auth.login("govind-owner", "another-new-strong-password"))
-        self.assertFalse(self.auth.reset_password_with_recovery(
-            recovery_secret, "another-new-strong-password"
-        ))
-        self.assertNotIn("recovery_secret_hash", json.loads(self.path.read_text()))
+        self.assertIsNotNone(self.auth.login("govind-owner", "third-new-strong-password"))
 
     def test_wrong_recovery_secret_cannot_reset_password(self):
         self.auth.setup("govind-owner", "correct horse battery staple")
