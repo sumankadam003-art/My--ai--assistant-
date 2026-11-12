@@ -92,7 +92,7 @@ def build_authorized_action_service(
     the UI must obtain explicit confirmation before requesting approval.
     """
     config = os.environ if environ is None else environ
-    owner_user_id = config.get("NEHA_ACTION_OWNER_ID") or config.get("NEHA_CLOUD_OWNER_ID", "")
+    owner_user_id = (config.get("NEHA_ACTION_OWNER_ID") or config.get("NEHA_CLOUD_OWNER_ID") or config.get("NEHA_OWNER_USER_ID", ""))
     if not isinstance(owner_user_id, str) or not owner_user_id.strip():
         raise ActionServiceConfigurationError(
             "Set NEHA_ACTION_OWNER_ID (or NEHA_CLOUD_OWNER_ID) for Neha's backend identity."
