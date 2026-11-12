@@ -1,25 +1,17 @@
-data/
-*.bak
-*.bak2
 .env
-
-# Python generated files
-__pycache__/
-*.py[cod]
-
-# Local secrets
 .env.*
 !.env.example
-
-# Backup files
-*.backup
-*.backup*
-*.critical-backup
-*.error-backup
-*.pre-*
-*.before-*
-*.gateway-backup
-*.voice-backup
-
-# Ignore this backup
-src/intent_interpreter.py.bak3
+**/.env
+**/.env.*
+!**/.env.example
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+node_modules/
+.expo/
+dist/
+*.log
+*.bak
+*.diff
+*.zip
