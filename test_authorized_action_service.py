@@ -38,6 +38,15 @@ class AuthorizedActionServiceTests(unittest.TestCase):
             self.service.request_approval("bad-session", "open youtube")
         self.assertEqual(self.calls, [])
 
+    def test_list_actions_requires_owner_and_returns_action_metadata(self):
+        with self.assertRaises(AuthorizationError):
+            self.service.list_actions("bad-session")
+        actions = self.service.list_actions("valid-session")
+        self.assertEqual(len(actions), 1)
+        self.assertEqual(actions[0]["name"], "open youtube")
+        self.assertEqual(actions[0]["description"], "Open YouTube")
+        self.assertEqual(self.calls, [])
+
     def test_approval_request_does_not_execute_action(self):
         result = self.service.request_approval(
             "valid-session", "open youtube"
