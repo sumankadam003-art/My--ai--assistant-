@@ -5,13 +5,22 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from neha_gateway import NehaGateway
-from cloud_auth import sign_up, sign_in, get_authenticated_user
-from cloud_memory import save_cloud_memory, load_cloud_memories
-from local_owner_auth import LocalOwnerAuth, OwnerAccountError
-from action_registry import build_default_action_manager
-from action_service_factory import build_authorized_action_service, ActionServiceConfigurationError
-from authorized_action_service import AuthorizationError
+try:
+    from .neha_gateway import NehaGateway
+    from .cloud_auth import sign_up, sign_in, get_authenticated_user
+    from .cloud_memory import save_cloud_memory, load_cloud_memories
+    from .local_owner_auth import LocalOwnerAuth, OwnerAccountError
+    from .action_registry import build_default_action_manager
+    from .action_service_factory import build_authorized_action_service, ActionServiceConfigurationError
+    from .authorized_action_service import AuthorizationError
+except ImportError:
+    from neha_gateway import NehaGateway
+    from cloud_auth import sign_up, sign_in, get_authenticated_user
+    from cloud_memory import save_cloud_memory, load_cloud_memories
+    from local_owner_auth import LocalOwnerAuth, OwnerAccountError
+    from action_registry import build_default_action_manager
+    from action_service_factory import build_authorized_action_service, ActionServiceConfigurationError
+    from authorized_action_service import AuthorizationError
 
 HOST = os.getenv("NEHA_API_HOST", "127.0.0.1")
 PORT = 8765
