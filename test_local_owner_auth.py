@@ -65,13 +65,26 @@ class LocalOwnerAuthTests(unittest.TestCase):
         self.assertNotEqual(record["recovery_secret_hash"], recovery_secret)
         self.assertEqual(record["owner_id"], owner_id)
 
-        self.assertTrue(self.auth.reset_password_with_recovery(
+        replacement_secret = self.auth.reset_password_with_recovery(
             recovery_secret, "a-new-strong-password"
-        ))
+        )
+        self.assertTrue(replacement_secret)
+        self.assertNotEqual(replacement_secret, recovery_secret)
         self.assertEqual(self.auth.owner_id, owner_id)
         self.assertIsNone(self.auth.verify_session(session))
         self.assertIsNone(self.auth.login("govind-owner", "correct horse battery staple"))
         self.assertIsNotNone(self.auth.login("govind-owner", "a-new-strong-password"))
+
+        # The rotated credential supports the next forgotten-password event.
+        next_secret = self.auth.reset_password_with_recovery(
+            replacement_secret, "another-new-strong-password"
+        )
+        self.assertTrue(next_secret)
+        self.assertNotEqual(next_secret, replacement_secret)
+        self.assertFalse(self.auth.reset_password_with_recovery(
+            replacement_secret, "third-new-strong-password"
+        ))
+        self.assertIsNotNone(self.auth.login("govind-owner", "another-new-strong-password"))
         self.assertFalse(self.auth.reset_password_with_recovery(
             recovery_secret, "another-new-strong-password"
         ))
