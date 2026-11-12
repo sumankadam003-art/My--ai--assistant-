@@ -4,6 +4,7 @@ import {
   Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
+import * as LocalAuthentication from 'expo-local-authentication';
 import API_URL from '../apiConfig';
 
 type ActionItem = {
@@ -96,7 +97,9 @@ export default function ActionsScreen() {
     if (!token || !API_URL) return;
     setBusy(true);
     try {
-      if (!SecureStore.canUseBiometricAuthentication()) {
+      const biometricHardware = await LocalAuthentication.hasHardwareAsync();
+      const biometricEnrolled = await LocalAuthentication.isEnrolledAsync();
+      if (!biometricHardware || !biometricEnrolled) {
         throw new Error('This Android device has no enrolled biometric method supported for protected recovery.');
       }
       const preparedResponse = await fetch(`${API_URL}/owner/recovery/enroll`, {
@@ -126,7 +129,7 @@ export default function ActionsScreen() {
       if (!activatedResponse.ok || !activated.success) {
         throw new Error(activated.error || 'Recovery was stored but could not be activated. Retry setup while logged in.');
       }
-      setMessage('Biometric password recovery is enabled on this Android device.');
+      setMessage('Biometric password recovery is enabled on this Android device and will remain available after future password resets.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Biometric recovery setup failed.');
     } finally {
@@ -160,7 +163,11 @@ export default function ActionsScreen() {
         body: JSON.stringify({ recovery_secret: recoverySecret, new_password: newPassword }),
       });
       const data = await response.json();
-      if (!response.ok || !data.success) throw new Error(data.error || 'Password reset failed.');
+      if (!response.ok || !data.success || !data.recovery_secret) {
+        throw new Error(data.error || 'Password reset failed or recovery could not be renewed.');
+      }
+      // Store the replacement under Android biometric protection for the next reset.
+      await SecureStore.setItemAsync(RECOVERY_KEY, data.recovery_secret, RECOVERY_OPTIONS);
       await SecureStore.deleteItemAsync(TOKEN_KEY);
       setToken(null);
       setActions([]);
@@ -327,7 +334,7 @@ export default function ActionsScreen() {
             </View>
             <View style={s.card}>
               <Text style={s.section}>ACCOUNT RECOVERY</Text>
-              <Text style={s.hint}>Enable this once while logged in. Android protects a random recovery credential with its biometric system. Neha receives only the credential after Android approves access, never your fingerprint.</Text>
+              <Text style={s.hint}>Enable this once while logged in. Android protects a rotating recovery credential with its biometric system. It is renewed automatically after each successful password reset. Neha receives only the credential after Android approves access, never your fingerprint.</Text>
               <TouchableOpacity style={s.secondary} onPress={enableBiometricRecovery} disabled={busy}>
                 <Text style={s.secondaryText}>ENABLE BIOMETRIC PASSWORD RESET</Text>
               </TouchableOpacity>
