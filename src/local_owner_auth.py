@@ -181,19 +181,40 @@ class LocalOwnerAuth:
         with self._lock:
             record = self._read_record()
             stored = record.get("recovery_secret_hash")
-            if not isinstance(stored, str) or not hmac.compare_digest(stored, digest):
+            pending = record.get("pending_recovery_secret_hash")
+            valid_active = isinstance(stored, str) and hmac.compare_digest(stored, digest)
+            valid_pending = isinstance(pending, str) and hmac.compare_digest(pending, digest)
+            if not (valid_active or valid_pending):
                 return False
             salt = secrets.token_bytes(16)
             record["salt"] = salt.hex()
             record["iterations"] = self.ITERATIONS
             record["password_hash"] = self._derive(new_password, salt, self.ITERATIONS).hex()
-            # Rotate the recovery credential so biometric recovery remains reusable.
+            # Stage the replacement. The previous secret stays valid until the
+            # app confirms that Android SecureStore saved this replacement.
             replacement_secret = secrets.token_urlsafe(32)
-            record["recovery_secret_hash"] = self._recovery_digest(replacement_secret)
+            record["pending_recovery_secret_hash"] = self._recovery_digest(replacement_secret)
             self._write_record(record)
             self._sessions.clear()
             self._pending_recovery.clear()
         return replacement_secret
+
+    def confirm_recovery_rotation(self, secret):
+        """Promote a client-saved pending secret; safe to retry after lost responses."""
+        if not isinstance(secret, str) or not 32 <= len(secret) <= 128:
+            return False
+        digest = self._recovery_digest(secret)
+        with self._lock:
+            record = self._read_record()
+            pending = record.get("pending_recovery_secret_hash")
+            active = record.get("recovery_secret_hash")
+            if isinstance(pending, str) and hmac.compare_digest(pending, digest):
+                record["recovery_secret_hash"] = pending
+                record.pop("pending_recovery_secret_hash", None)
+                self._write_record(record)
+                return True
+            # Idempotent success if the confirmation response was lost.
+            return isinstance(active, str) and hmac.compare_digest(active, digest)
 
     def logout(self, token):
         if not isinstance(token, str):
