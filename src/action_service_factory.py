@@ -12,13 +12,13 @@ try:
     from .action_authorization import ApprovalStore, OwnerAuthorizer
     from .action_engine_bridge import ActionEngineBridge
     from .authorized_action_service import AuthorizedActionService
-    from .cloud_auth import get_authenticated_user
+    from .local_owner_auth import LocalOwnerAuth
 except ImportError:  # Supports the project's src-on-PYTHONPATH layout.
     from action_audit import JsonlActionAudit
     from action_authorization import ApprovalStore, OwnerAuthorizer
     from action_engine_bridge import ActionEngineBridge
     from authorized_action_service import AuthorizedActionService
-    from cloud_auth import get_authenticated_user
+    from local_owner_auth import LocalOwnerAuth
 
 
 _PERMISSION_PATTERN = re.compile(
@@ -84,6 +84,7 @@ def build_authorized_action_service(
     *,
     environ: Optional[Mapping[str, str]] = None,
     session_verifier: Optional[Callable] = None,
+    owner_auth: Optional[LocalOwnerAuth] = None,
     audit_path: str = "data/action_audit.jsonl",
     approval_ttl_seconds: int = 120,
 ):
@@ -93,14 +94,14 @@ def build_authorized_action_service(
     calling request_approval. This factory does not expose HTTP endpoints.
     """
     config = os.environ if environ is None else environ
-    owner_user_id = config.get("NEHA_OWNER_USER_ID", "")
-    if not isinstance(owner_user_id, str) or not owner_user_id.strip():
+    local_auth = owner_auth or LocalOwnerAuth()
+    if not local_auth.is_configured():
         raise ActionServiceConfigurationError(
-            "NEHA_OWNER_USER_ID is missing; action service is disabled."
+            "Neha owner account is not configured; run python -m src.setup_owner."
         )
-
+    owner_user_id = local_auth.owner_id
     policy = PermissionPolicy.from_environment(owner_user_id, config)
-    verifier = session_verifier or get_authenticated_user
+    verifier = session_verifier or local_auth.verify_session
     owner_authorizer = OwnerAuthorizer(owner_user_id, verifier)
     audit_sink = JsonlActionAudit(audit_path)
     bridge = ActionEngineBridge(
