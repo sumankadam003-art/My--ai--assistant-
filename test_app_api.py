@@ -1,190 +1,86 @@
 import json
-import sys
-import tempfile
 import threading
 import unittest
 from http.server import ThreadingHTTPServer
-from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 from unittest.mock import patch
 
-sys.path.insert(0, str(Path(__file__).parent / "src"))
 import app_api
-from action_service_factory import build_authorized_action_service
-from local_owner_auth import LocalOwnerAuth
-from plugin_manager import ActionPluginManager
+
+
+class FakeActionService:
+    def __init__(self):
+        self.executed = []
+
+    def list_actions(self, identity=None):
+        return [{"name": "safe test", "description": "A safe test action", "enabled": True}]
+
+    def request_approval(self, identity, action, arguments):
+        return {"success": True, "approval_token": "single-use-token"}
+
+    def execute(self, identity, action, arguments, approval_token):
+        if approval_token != "single-use-token" or action != "safe test":
+            return {"success": False, "status": "approval_invalid"}
+        self.executed.append(action)
+        return {"success": True, "status": "executed_unverified", "message": "Test action ran"}
 
 
 class ActionAPIIntegrationTests(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory()
-        root = Path(self.temp.name)
-        self.auth = LocalOwnerAuth(root / "owner_auth.json")
-        self.auth.setup("test-owner", "a-strong-test-password")
-        self.calls = []
-        manager = ActionPluginManager()
-        manager.register("test action", "Run a harmless test action",
-                         lambda: self.calls.append("ran") or "test returned",
-                         "test.execute", True, "test")
-        service = build_authorized_action_service(
-            manager, owner_auth=self.auth,
-            environ={"NEHA_ACTION_PERMISSIONS": "test.execute"},
-            audit_path=str(root / "audit.jsonl"),
-        )
+        self.service = FakeActionService()
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), app_api.NehaAPIHandler)
         self.server.daemon_threads = True
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
         self.base = "http://127.0.0.1:%s" % self.server.server_address[1]
-        self.auth_patch = patch.object(app_api, "owner_auth", self.auth)
-        self.service_patch = patch.object(app_api, "get_action_service", lambda: service)
-        self.auth_patch.start()
+        self.service_patch = patch.object(app_api, "get_action_service", lambda: self.service)
         self.service_patch.start()
         self.addCleanup(self.service_patch.stop)
-        self.addCleanup(self.auth_patch.stop)
 
     def tearDown(self):
         self.server.shutdown()
         self.server.server_close()
         self.thread.join(timeout=2)
-        self.temp.cleanup()
 
-    def request(self, method, path, body=None, token=None):
+    def request(self, method, path, body=None):
         data = None if body is None else json.dumps(body).encode()
-        headers = {"Content-Type": "application/json"}
-        if token:
-            headers["Authorization"] = "Bearer " + token
-        request = Request(self.base + path, data=data, headers=headers, method=method)
+        request = Request(self.base + path, data=data,
+                          headers={"Content-Type": "application/json"}, method=method)
         try:
             response = urlopen(request, timeout=3)
         except HTTPError as error:
             response = error
         return response.code, json.loads(response.read().decode())
 
-    def login(self, password="a-strong-test-password"):
-        status, result = self.request("POST", "/owner/login", {
-            "username": "test-owner", "password": password
+    def test_actions_list_without_user_login(self):
+        status, result = self.request("GET", "/actions")
+        self.assertEqual(status, 200)
+        self.assertEqual(result["actions"][0]["name"], "safe test")
+
+    def test_action_requires_explicit_confirmation(self):
+        status, _ = self.request("POST", "/actions/approve", {"action": "safe test"})
+        self.assertEqual(status, 403)
+        self.assertEqual(self.service.executed, [])
+
+    def test_confirmed_action_executes_with_single_use_approval(self):
+        status, approval = self.request("POST", "/actions/approve", {
+            "action": "safe test", "arguments": {}, "owner_confirmed": True
         })
         self.assertEqual(status, 200)
-        return result["access_token"]
-
-    def test_action_routes_require_owner_authentication(self):
-        status, _ = self.request("GET", "/actions")
-        self.assertEqual(status, 401)
-        self.assertEqual(self.calls, [])
-
-    def test_owner_can_list_approve_and_execute_once(self):
-        token = self.login()
-        status, listed = self.request("GET", "/actions", token=token)
-        self.assertEqual(status, 200)
-        self.assertEqual(listed["actions"][0]["name"], "test action")
-
-        status, _ = self.request("POST", "/actions/approve",
-                                 {"action": "test action"}, token)
-        self.assertEqual(status, 403)
-        self.assertEqual(self.calls, [])
-
-        status, approval = self.request("POST", "/actions/approve",
-            {"action": "test action", "owner_confirmed": True}, token)
-        self.assertEqual(status, 200)
-        self.assertEqual(self.calls, [])
-
-        status, result = self.request("POST", "/actions/execute",
-            {"action": "test action", "approval_token": approval["approval_token"]}, token)
+        status, result = self.request("POST", "/actions/execute", {
+            "action": "safe test", "arguments": {},
+            "approval_token": approval["approval_token"]
+        })
         self.assertEqual(status, 200)
         self.assertEqual(result["status"], "executed_unverified")
-        self.assertEqual(self.calls, ["ran"])
+        self.assertEqual(self.service.executed, ["safe test"])
 
-        status, replay = self.request("POST", "/actions/execute",
-            {"action": "test action", "approval_token": approval["approval_token"]}, token)
-        self.assertEqual(status, 200)
-        self.assertEqual(replay["status"], "approval_invalid")
-        self.assertEqual(self.calls, ["ran"])
-
-    def test_biometric_recovery_enrollment_requires_owner_session(self):
-        status, _ = self.request("POST", "/owner/recovery/enroll", {})
-        self.assertEqual(status, 401)
-
-    def test_biometric_recovery_can_retry_if_client_does_not_save_replacement(self):
-        owner_id = self.auth.owner_id
-        token = self.login()
-        status, prepared = self.request("POST", "/owner/recovery/enroll", {}, token)
-        self.assertEqual(status, 200)
-        secret = prepared["recovery_secret"]
-
-        status, activated = self.request(
-            "POST", "/owner/recovery/activate", {"recovery_secret": secret}, token
-        )
-        self.assertEqual(status, 200)
-        self.assertTrue(activated["success"])
-
-        status, first_reset = self.request("POST", "/owner/password/reset", {
-            "recovery_secret": secret, "new_password": "new-test-owner-password"
-        })
-        self.assertEqual(status, 200)
-        first_replacement = first_reset["recovery_secret"]
-        self.assertTrue(first_replacement)
-        self.assertEqual(self.auth.owner_id, owner_id)
-        self.assertIsNone(self.auth.verify_session(token))
-        self.login(password="new-test-owner-password")
-
-        # Simulate SecureStore failing: no confirmation is sent, so the old
-        # credential remains usable and can obtain another replacement.
-        status, second_reset = self.request("POST", "/owner/password/reset", {
-            "recovery_secret": secret,
-            "new_password": "another-test-owner-password"
-        })
-        self.assertEqual(status, 200)
-        second_replacement = second_reset["recovery_secret"]
-        self.assertNotEqual(second_replacement, first_replacement)
-
-        status, confirmed = self.request("POST", "/owner/recovery/confirm", {
-            "recovery_secret": second_replacement
-        })
-        self.assertEqual(status, 200)
-        self.assertTrue(confirmed["success"])
-
-        status, old_replay = self.request("POST", "/owner/password/reset", {
-            "recovery_secret": secret, "new_password": "third-test-owner-password"
-        })
-        self.assertEqual(status, 401)
-        self.assertFalse(old_replay["success"])
-        status, unconfirmed_replay = self.request("POST", "/owner/password/reset", {
-            "recovery_secret": first_replacement, "new_password": "third-test-owner-password"
-        })
-        self.assertEqual(status, 401)
-        self.assertFalse(unconfirmed_replay["success"])
-
-        # The confirmed replacement supports the next reset and confirmation.
-        status, next_reset = self.request("POST", "/owner/password/reset", {
-            "recovery_secret": second_replacement,
-            "new_password": "third-test-owner-password"
-        })
-        self.assertEqual(status, 200)
-        next_replacement = next_reset["recovery_secret"]
-        status, next_confirmed = self.request("POST", "/owner/recovery/confirm", {
-            "recovery_secret": next_replacement
-        })
-        self.assertEqual(status, 200)
-        self.assertTrue(next_confirmed["success"])
-        self.login(password="third-test-owner-password")
-
-    def test_wrong_biometric_recovery_secret_is_rejected(self):
-        status, result = self.request("POST", "/owner/password/reset", {
-            "recovery_secret": "wrong-recovery-secret-value-that-is-long-enough",
-            "new_password": "new-test-owner-password",
-        })
-        self.assertEqual(status, 401)
-        self.assertFalse(result["success"])
-        self.assertIsNotNone(self.auth.login("test-owner", "a-strong-test-password"))
-
-    def test_logout_revokes_owner_session(self):
-        token = self.login()
-        status, _ = self.request("POST", "/owner/logout", {}, token)
-        self.assertEqual(status, 200)
-        status, _ = self.request("GET", "/actions", token=token)
-        self.assertEqual(status, 401)
+    def test_personal_login_routes_are_removed(self):
+        for path in ("/owner/login", "/owner/logout", "/owner/password/reset",
+                     "/auth/signup", "/auth/login"):
+            status, _ = self.request("POST", path, {})
+            self.assertEqual(status, 404, path)
 
 
 if __name__ == "__main__":
