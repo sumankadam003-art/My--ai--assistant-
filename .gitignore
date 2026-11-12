@@ -15,3 +15,13 @@ dist/
 *.bak
 *.diff
 *.zip
+
+# Local runtime data may contain private memories and conversations
+data/
+
+# Local recovery copies; keep them out of normal commits
+*backup*
+*.bak*
+*.before-*
+*.pre-*
+*.audit-baseline
