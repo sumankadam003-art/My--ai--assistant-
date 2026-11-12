@@ -126,6 +126,13 @@ class ActionAPIIntegrationTests(unittest.TestCase):
         self.assertTrue(reset["success"])
         self.assertEqual(self.auth.owner_id, owner_id)
         self.assertIsNone(self.auth.verify_session(token))
+
+        # The same recovery credential must not be reusable for a second reset.
+        status, replay = self.request("POST", "/owner/password/reset", {
+            "recovery_secret": secret, "new_password": "another-test-owner-password"
+        })
+        self.assertEqual(status, 401)
+        self.assertFalse(replay["success"])
         self.login(password="new-test-owner-password")
 
     def test_wrong_biometric_recovery_secret_is_rejected(self):
