@@ -124,16 +124,28 @@ class ActionAPIIntegrationTests(unittest.TestCase):
         })
         self.assertEqual(status, 200)
         self.assertTrue(reset["success"])
+        replacement_secret = reset["recovery_secret"]
+        self.assertTrue(replacement_secret)
+        self.assertNotEqual(replacement_secret, secret)
         self.assertEqual(self.auth.owner_id, owner_id)
         self.assertIsNone(self.auth.verify_session(token))
+        self.login(password="new-test-owner-password")
 
-        # The same recovery credential must not be reusable for a second reset.
+        # The replacement credential supports a later reset as well.
+        status, next_reset = self.request("POST", "/owner/password/reset", {
+            "recovery_secret": replacement_secret,
+            "new_password": "another-test-owner-password"
+        })
+        self.assertEqual(status, 200)
+        self.assertTrue(next_reset["success"])
+        self.assertNotEqual(next_reset["recovery_secret"], replacement_secret)
         status, replay = self.request("POST", "/owner/password/reset", {
-            "recovery_secret": secret, "new_password": "another-test-owner-password"
+            "recovery_secret": replacement_secret,
+            "new_password": "third-test-owner-password"
         })
         self.assertEqual(status, 401)
         self.assertFalse(replay["success"])
-        self.login(password="new-test-owner-password")
+        self.login(password="another-test-owner-password")
 
     def test_wrong_biometric_recovery_secret_is_rejected(self):
         status, result = self.request("POST", "/owner/password/reset", {
