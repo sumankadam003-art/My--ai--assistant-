@@ -1,4 +1,3 @@
-import json
 import threading
 import unittest
 from http.server import ThreadingHTTPServer
@@ -19,27 +18,24 @@ class AppAPISecurityTests(unittest.TestCase):
         self.server.server_close()
         self.thread.join(timeout=2)
 
-    def test_chat_rejects_missing_authorization(self):
+    @patch("src.app_api.gateway.ask", return_value="Hello from Neha")
+    def test_chat_works_without_user_authentication(self, ask):
         import httpx
-        response = httpx.post(
-            self.base + "/chat",
-            json={"message": "hello"},
-            timeout=3,
-        )
-        self.assertEqual(response.status_code, 401)
-        self.assertEqual(response.json()["error"], "Authentication required")
+        response = httpx.post(self.base + "/chat", json={"message": "hello"}, timeout=3)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["reply"], "Hello from Neha")
+        ask.assert_called_once()
 
-    @patch("src.app_api.get_authenticated_user", return_value=None)
-    def test_chat_rejects_invalid_token(self, _mock_user):
+    def test_user_authentication_routes_are_not_exposed(self):
         import httpx
-        response = httpx.post(
-            self.base + "/chat",
-            json={"message": "hello"},
-            headers={"Authorization": "Bearer invalid"},
-            timeout=3,
-        )
-        self.assertEqual(response.status_code, 401)
-        self.assertEqual(response.json()["error"], "Invalid or expired session")
+        for path in ("/auth/signup", "/auth/login", "/owner/login", "/owner/logout"):
+            response = httpx.post(self.base + path, json={}, timeout=3)
+            self.assertEqual(response.status_code, 404, path)
+
+    def test_chat_still_validates_message(self):
+        import httpx
+        response = httpx.post(self.base + "/chat", json={"message": " "}, timeout=3)
+        self.assertEqual(response.status_code, 400)
 
 
 if __name__ == "__main__":
