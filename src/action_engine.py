@@ -105,6 +105,8 @@ class ActionEngine:
         if not isinstance(requires_approval, bool):
             raise TypeError("requires_approval must be boolean.")
 
+        if isinstance(required_permissions, (str, bytes)):
+            raise TypeError("required_permissions must be a collection of permission names.")
         permissions = tuple(required_permissions)
         if any(not isinstance(p, str) or not p.strip() for p in permissions):
             raise ValueError("Every permission must be a non-empty string.")
@@ -178,7 +180,12 @@ class ActionEngine:
     ) -> ActionResult:
         key = name.strip().lower() if isinstance(name, str) else ""
         request_id = request_id or str(uuid.uuid4())
-        args = dict(arguments or {}) if isinstance(arguments or {}, Mapping) else None
+        if arguments is None:
+            args = {}
+        elif isinstance(arguments, Mapping):
+            args = dict(arguments)
+        else:
+            args = None
 
         def deny(status, message):
             result = ActionResult(False, status, message, key or None, request_id)
