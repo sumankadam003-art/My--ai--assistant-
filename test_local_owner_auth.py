@@ -36,4 +36,9 @@ class LocalOwnerAuthTests(unittest.TestCase):
         with self.assertRaises(OwnerAccountError): self.auth.setup("ab", "correct horse battery staple")
         with self.assertRaises(OwnerAccountError): self.auth.setup("valid-user", "short")
 
+    def test_login_rejects_oversized_credentials(self):
+        self.auth.setup("govind-owner", "correct horse battery staple")
+        self.assertIsNone(self.auth.login("govind-owner", "x" * 1025))
+        self.assertIsNone(self.auth.login("x" * 65, "correct horse battery staple"))
+
 if __name__ == "__main__": unittest.main()
