@@ -94,14 +94,29 @@ def build_authorized_action_service(
     calling request_approval. This factory does not expose HTTP endpoints.
     """
     config = os.environ if environ is None else environ
-    local_auth = owner_auth or LocalOwnerAuth()
-    if not local_auth.is_configured():
-        raise ActionServiceConfigurationError(
-            "Neha owner account is not configured; run python -m src.setup_owner."
-        )
-    owner_user_id = local_auth.owner_id
+    if owner_auth is not None:
+        local_auth = owner_auth
+    elif session_verifier is not None and config.get("NEHA_OWNER_USER_ID"):
+        # Explicit dependency injection supports isolated tests and controlled
+        # integrations; normal application use relies on the local owner file.
+        local_auth = None
+    else:
+        local_auth = LocalOwnerAuth()
+
+    if local_auth is not None:
+        if not local_auth.is_configured():
+            raise ActionServiceConfigurationError(
+                "Neha owner account is not configured; run python -m src.setup_owner."
+            )
+        owner_user_id = local_auth.owner_id
+        verifier = session_verifier or local_auth.verify_session
+    else:
+        owner_user_id = config.get("NEHA_OWNER_USER_ID", "")
+        if not isinstance(owner_user_id, str) or not owner_user_id.strip():
+            raise ActionServiceConfigurationError("Owner identity is not configured.")
+        verifier = session_verifier
+
     policy = PermissionPolicy.from_environment(owner_user_id, config)
-    verifier = session_verifier or local_auth.verify_session
     owner_authorizer = OwnerAuthorizer(owner_user_id, verifier)
     audit_sink = JsonlActionAudit(audit_path)
     bridge = ActionEngineBridge(
