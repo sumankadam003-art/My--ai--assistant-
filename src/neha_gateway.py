@@ -22,7 +22,7 @@ class NehaGateway:
     def _words(text):
         return set(re.findall(r"\b[a-zA-Z0-9]+\b", text.lower()))
 
-    def _get_memories(self, prompt, user_id=None, access_token=None):
+    def _get_memories(self, prompt, user_id=None):
         try:
             memories = select_relevant_memories(prompt)
             if not isinstance(memories, list):
@@ -40,12 +40,12 @@ class NehaGateway:
             )
             memories = []
 
-        # Cloud memory requires an authenticated session.
-        if not user_id or not access_token:
+        # Cloud memory is accessed only by Neha's trusted backend identity.
+        if not user_id:
             return memories[:10]
 
         try:
-            records = load_cloud_memories(user_id, access_token)
+            records = load_cloud_memories(user_id)
             if records is None:
                 return memories
             query_words = self._words(prompt)
@@ -85,7 +85,6 @@ class NehaGateway:
         prompt,
         history=None,
         user_id=None,
-        access_token=None,
     ):
         if not isinstance(prompt, str) or not prompt.strip():
             raise ValueError("Prompt must be a non-empty string.")
@@ -106,7 +105,6 @@ class NehaGateway:
         memories = self._get_memories(
             prompt,
             user_id=user_id,
-            access_token=access_token,
         )
 
         context = (
