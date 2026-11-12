@@ -187,12 +187,13 @@ class LocalOwnerAuth:
             record["salt"] = salt.hex()
             record["iterations"] = self.ITERATIONS
             record["password_hash"] = self._derive(new_password, salt, self.ITERATIONS).hex()
-            # Recovery credentials are single-use: invalidate before reporting success.
-            record.pop("recovery_secret_hash", None)
+            # Rotate the recovery credential so biometric recovery remains reusable.
+            replacement_secret = secrets.token_urlsafe(32)
+            record["recovery_secret_hash"] = self._recovery_digest(replacement_secret)
             self._write_record(record)
             self._sessions.clear()
             self._pending_recovery.clear()
-        return True
+        return replacement_secret
 
     def logout(self, token):
         if not isinstance(token, str):
