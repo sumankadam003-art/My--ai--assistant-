@@ -132,7 +132,7 @@ def save_memory_safely(memory, user_id=None, access_token=None):
         try:
             from cloud_memory import save_cloud_memory
             cloud_saved = save_cloud_memory(
-                user_id, memory, access_token
+                user_id, memory
             )
         except Exception:
             cloud_saved = False
@@ -167,7 +167,6 @@ def sync_pending_memories(user_id, access_token):
             success = save_cloud_memory(
                 user_id,
                 memory,
-                access_token,
                 category=item.get("category", "general"),
             )
         except Exception:
@@ -227,7 +226,7 @@ def sync_all_local_memories(user_id, access_token):
         if memory in cloud_texts:
             continue
         try:
-            success = save_cloud_memory(user_id, memory, access_token)
+            success = save_cloud_memory(user_id, memory)
         except Exception:
             success = False
 
