@@ -178,10 +178,20 @@ class LocalOwnerAuth:
     def login_challenge(self, challenge_id, answer):
         if not isinstance(challenge_id, str) or not isinstance(answer, str) or len(answer) > 8:
             return None
+        raw_offset = os.environ.get("NEHA_LOGIN_OFFSET")
+        if raw_offset is None:
+            env_path = Path(".env")
+            try:
+                for line in env_path.read_text(encoding="utf-8").splitlines():
+                    if line.strip().startswith("NEHA_LOGIN_OFFSET="):
+                        raw_offset = line.split("=", 1)[1].strip().strip("\"'") 
+                        break
+            except OSError:
+                pass
         try:
-            offset = int(os.environ["NEHA_LOGIN_OFFSET"])
-        except (KeyError, TypeError, ValueError):
-            raise OwnerAccountError("NEHA_LOGIN_OFFSET must be configured privately.")
+            offset = int(raw_offset)
+        except (TypeError, ValueError):
+            raise OwnerAccountError("Private login offset is not configured in the environment.")
         with self._lock:
             challenge = self._challenges.get(challenge_id)
             if not challenge or challenge["expires"] <= time.monotonic():
@@ -268,7 +278,7 @@ class LocalOwnerAuth:
             replacement_secret = secrets.token_urlsafe(32)
             record["pending_recovery_secret_hash"] = self._recovery_digest(replacement_secret)
             self._write_record(record)
-            self._sessions.clear()
+            self._write_sessions({})
             self._pending_recovery.clear()
         return replacement_secret
 
