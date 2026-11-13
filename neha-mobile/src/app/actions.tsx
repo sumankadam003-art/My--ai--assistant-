@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Modal, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import API_URL from '../apiConfig';
-import { getAccessToken, getChallenge, login } from '../auth';
+import { getAccessToken, getChallenge, login, logout } from '../auth';
 
 type ActionItem = { name: string; description: string; risk: string; required_permissions: string[]; requires_approval: boolean; enabled: boolean };
 
@@ -28,6 +28,15 @@ export default function ActionsScreen() {
     }
     const response = await fetch(`${API_URL}/actions`, { headers: { Authorization: `Bearer ${token}` } });
     const data = await response.json();
+    if (response.status === 401) {
+      await logout();
+      const challenge = await getChallenge();
+      setChallengeId(challenge.challengeId);
+      setChallengeNumber(challenge.challenge);
+      setLoginVisible(true);
+      setMessage('Your session expired. Sign in again.');
+      return;
+    }
     if (!response.ok || !data.success) throw new Error(data.error || 'Could not load actions.');
     setActions(Array.isArray(data.actions) ? data.actions : []);
   }, []);
