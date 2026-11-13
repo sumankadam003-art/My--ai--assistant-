@@ -1,3 +1,7 @@
+import json
+import os
+from pathlib import Path
+from local_owner_auth import LocalOwnerAuth, OwnerAccountError
 from intent_interpreter import interpret_request
 from actions import run_action
 from plugin_manager import ActionPluginManager
@@ -44,7 +48,39 @@ def execute_plugin(plugin_manager, name, description):
     print("Neha:", result["message"])
 
 
+def _termux_login():
+    auth = LocalOwnerAuth(session_ttl_seconds=None)
+    session_path = Path("data/termux_session.json")
+    session_path.parent.mkdir(parents=True, exist_ok=True)
+    token = None
+    try:
+        saved = json.loads(session_path.read_text(encoding="utf-8"))
+        token = saved.get("access_token") if isinstance(saved, dict) else None
+    except (OSError, ValueError):
+        token = None
+    if token and auth.verify_session(token):
+        return auth, token
+    session_path.unlink(missing_ok=True)
+    challenge = auth.create_challenge()
+    print("Neha owner challenge:", challenge["challenge"])
+    answer = input("Login response: ").strip()
+    result = auth.login_challenge(challenge["challenge_id"], answer)
+    if not result:
+        raise SystemExit("Login failed or challenge expired. Restart Neha for a new challenge.")
+    token = result["access_token"]
+    temp = session_path.with_suffix(".tmp")
+    fd = os.open(str(temp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        json.dump({"access_token": token}, handle)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(temp, session_path)
+    os.chmod(session_path, 0o600)
+    return auth, token
+
+
 def main():
+    auth, session_token = _termux_login()
     manager = NehaGateway()
     action_manager = ActionPluginManager()
     builtins = {
@@ -90,6 +126,12 @@ def main():
             prompt = prompt.strip()
             print("You said:", prompt)
         if prompt.lower() in ("exit", "quit"):
+            break
+
+        if prompt.lower() == "/logout":
+            auth.logout(session_token)
+            Path("data/termux_session.json").unlink(missing_ok=True)
+            print("Neha: Logged out. A fresh challenge is required next time.")
             break
 
         if prompt == "/memories":
