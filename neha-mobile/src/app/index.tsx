@@ -241,7 +241,7 @@ export default function HomeScreen() {
             multiline
             maxLength={2000}
           />
-          <TouchableOpacity style={s.send} onPress={sendMessage}>
+          <TouchableOpacity style={s.send} onPress={() => void sendMessage()}>
             <Text style={s.sendText}>➤</Text>
           </TouchableOpacity>
         </View>
