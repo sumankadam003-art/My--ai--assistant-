@@ -12,6 +12,7 @@ try:
     from .action_registry import build_default_action_manager
     from .action_service_factory import build_authorized_action_service, ActionServiceConfigurationError
     from .authorized_action_service import AuthorizationError
+    from .local_owner_auth import LocalOwnerAuth, OwnerAccountError
 except ImportError:
     from neha_gateway import NehaGateway
     from cloud_memory import (
@@ -20,11 +21,13 @@ except ImportError:
     from action_registry import build_default_action_manager
     from action_service_factory import build_authorized_action_service, ActionServiceConfigurationError
     from authorized_action_service import AuthorizationError
+    from local_owner_auth import LocalOwnerAuth, OwnerAccountError
 
 # Keep this API on loopback. Do not expose it to a LAN or public interface.
 HOST = os.getenv("NEHA_API_HOST", "127.0.0.1")
 PORT = 8765
 gateway = NehaGateway()
+owner_auth = LocalOwnerAuth(session_ttl_seconds=None)
 _action_service = None
 _action_service_lock = threading.Lock()
 
@@ -36,7 +39,7 @@ def get_action_service():
     with _action_service_lock:
         if _action_service is None:
             _action_service = build_authorized_action_service(
-                build_default_action_manager()
+                build_default_action_manager(), owner_auth=owner_auth
             )
     return _action_service
 
@@ -49,9 +52,17 @@ class NehaAPIHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Access-Control-Allow-Origin", "http://localhost:8081")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
         self.end_headers()
         self.wfile.write(body)
+
+    def access_token(self):
+        header = self.headers.get("Authorization", "")
+        scheme, _, token = header.partition(" ")
+        return token.strip() if scheme.lower() == "bearer" and token.strip() else None
+
+    def require_owner(self):
+        return owner_auth.verify_session(self.access_token())
 
     def read_payload(self):
         try:
@@ -78,9 +89,15 @@ class NehaAPIHandler(BaseHTTPRequestHandler):
             return
         if self.path == "/actions":
             try:
+                token = self.access_token()
+                if not owner_auth.verify_session(token):
+                    self.send_json(401, {"success": False, "error": "Login required"})
+                    return
                 service = get_action_service()
-                self.send_json(200, {"success": True, "actions": service.list_actions(None)})
-            except (ActionServiceConfigurationError, AuthorizationError):
+                self.send_json(200, {"success": True, "actions": service.list_actions(token)})
+            except AuthorizationError:
+                self.send_json(401, {"success": False, "error": "Login required"})
+            except (ActionServiceConfigurationError, OwnerAccountError):
                 self.send_json(503, {"success": False, "error": "Neha action service is not configured"})
             except Exception:
                 self.send_json(500, {"success": False, "error": "Could not list actions"})
@@ -88,9 +105,37 @@ class NehaAPIHandler(BaseHTTPRequestHandler):
         self.send_json(404, {"error": "Not found"})
 
     def do_POST(self):
+        if self.path == "/auth/challenge":
+            try:
+                self.send_json(200, {"success": True, **owner_auth.create_challenge()})
+            except OwnerAccountError:
+                self.send_json(503, {"success": False, "error": "Owner login is not configured"})
+            return
+        if self.path == "/auth/login":
+            try:
+                payload = self.read_payload()
+                result = owner_auth.login_challenge(payload.get("challenge_id"), payload.get("answer"))
+                if not result:
+                    self.send_json(401, {"success": False, "error": "Invalid or expired challenge"})
+                    return
+                self.send_json(200, {"success": True, **result})
+            except (ValueError, UnicodeDecodeError, json.JSONDecodeError):
+                self.send_json(400, {"success": False, "error": "Invalid login request"})
+            except OwnerAccountError:
+                self.send_json(503, {"success": False, "error": "Owner login is not configured"})
+            return
+        if self.path == "/auth/logout":
+            token = self.access_token()
+            revoked = owner_auth.logout(token)
+            self.send_json(200 if revoked else 401, {"success": bool(revoked)})
+            return
         allowed = ("/chat", "/memory/save", "/memory/load", "/actions/approve", "/actions/execute")
         if self.path not in allowed:
             self.send_json(404, {"error": "Not found"})
+            return
+        token = self.access_token()
+        if not owner_auth.verify_session(token):
+            self.send_json(401, {"success": False, "error": "Login required"})
             return
         try:
             payload = self.read_payload()
@@ -131,11 +176,13 @@ class NehaAPIHandler(BaseHTTPRequestHandler):
                     if payload.get("owner_confirmed") is not True:
                         self.send_json(403, {"success": False, "error": "Explicit confirmation is required"})
                         return
-                    self.send_json(200, service.request_approval(None, action, arguments))
+                    self.send_json(200, service.request_approval(token, action, arguments))
                     return
-                result = service.execute(None, action, arguments, payload.get("approval_token"))
+                result = service.execute(token, action, arguments, payload.get("approval_token"))
                 self.send_json(200, result)
-            except (ActionServiceConfigurationError, AuthorizationError):
+            except AuthorizationError:
+                self.send_json(401, {"success": False, "error": "Login required"})
+            except ActionServiceConfigurationError:
                 self.send_json(503, {"success": False, "error": "Neha action service is not configured"})
             except ValueError as exc:
                 self.send_json(400, {"success": False, "error": str(exc)})
