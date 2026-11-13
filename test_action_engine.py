@@ -123,6 +123,7 @@ class ActionEngineTests(unittest.TestCase):
             "test.arguments", {"unexpected": True}, actor="owner"
         )
         self.assertEqual(result.status, "invalid_arguments")
+        self.assertFalse(result.ok)
 
     def test_internal_type_error_is_execution_failed(self):
         def broken_handler():
@@ -140,6 +141,7 @@ class ActionEngineTests(unittest.TestCase):
             "test.internal_type_error", actor="owner"
         )
         self.assertEqual(result.status, "execution_failed")
+        self.assertFalse(result.ok)
 
     def test_duplicate_registration_is_rejected(self):
         with self.assertRaises(ValueError):

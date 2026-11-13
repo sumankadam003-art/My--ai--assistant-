@@ -5,6 +5,7 @@ treated as executable code or a shell command.
 """
 from dataclasses import dataclass, field
 from enum import IntEnum
+import inspect
 from threading import RLock
 from typing import Any, Callable, Dict, Mapping, Optional
 import inspect
