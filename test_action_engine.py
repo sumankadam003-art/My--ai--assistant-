@@ -110,6 +110,37 @@ class ActionEngineTests(unittest.TestCase):
         self.assertEqual(result.status, "execution_failed")
         self.assertFalse(result.ok)
 
+    def test_unexpected_handler_argument_is_invalid_arguments(self):
+        engine = ActionEngine()
+        engine.register(
+            "test.arguments",
+            "Test argument validation",
+            lambda: "ran",
+            risk=RiskLevel.LOW,
+            requires_approval=False,
+        )
+        result = engine.execute(
+            "test.arguments", {"unexpected": True}, actor="owner"
+        )
+        self.assertEqual(result.status, "invalid_arguments")
+
+    def test_internal_type_error_is_execution_failed(self):
+        def broken_handler():
+            raise TypeError("Internal handler defect")
+
+        engine = ActionEngine()
+        engine.register(
+            "test.internal_type_error",
+            "Test internal TypeError",
+            broken_handler,
+            risk=RiskLevel.LOW,
+            requires_approval=False,
+        )
+        result = engine.execute(
+            "test.internal_type_error", actor="owner"
+        )
+        self.assertEqual(result.status, "execution_failed")
+
     def test_duplicate_registration_is_rejected(self):
         with self.assertRaises(ValueError):
             self.engine.register(
