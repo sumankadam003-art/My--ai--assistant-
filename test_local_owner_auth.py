@@ -27,6 +27,36 @@ class LocalOwnerAuthTests(unittest.TestCase):
         self.assertIsNotNone(login)
         self.assertTrue(self.auth.verify_session(login["access_token"])["id"])
 
+    def test_challenge_is_single_use_and_session_survives_restart(self):
+        import os
+        from unittest.mock import patch
+        self.auth.setup("govind-owner", "correct horse battery staple")
+        with patch.dict(os.environ, {"NEHA_LOGIN_OFFSET": "2003"}):
+            challenge = self.auth.create_challenge()
+            result = self.auth.login_challenge(
+                challenge["challenge_id"], str(challenge["challenge"] + 2003)
+            )
+            self.assertIsNotNone(result)
+            token = result["access_token"]
+            self.assertTrue(LocalOwnerAuth(self.path, session_ttl_seconds=None).verify_session(token))
+            self.assertIsNone(self.auth.login_challenge(
+                challenge["challenge_id"], str(challenge["challenge"] + 2003)
+            ))
+            self.assertTrue(self.auth.logout(token))
+            self.assertIsNone(self.auth.verify_session(token))
+
+    def test_challenge_rejects_five_wrong_answers(self):
+        import os
+        from unittest.mock import patch
+        self.auth.setup("govind-owner", "correct horse battery staple")
+        with patch.dict(os.environ, {"NEHA_LOGIN_OFFSET": "2003"}):
+            challenge = self.auth.create_challenge()
+            for _ in range(5):
+                self.assertIsNone(self.auth.login_challenge(challenge["challenge_id"], "1"))
+            self.assertIsNone(self.auth.login_challenge(
+                challenge["challenge_id"], str(challenge["challenge"] + 2003)
+            ))
+
     def test_wrong_credentials_rejected(self):
         self.auth.setup("govind-owner", "correct horse battery staple")
         self.assertIsNone(self.auth.login("other", "correct horse battery staple"))
