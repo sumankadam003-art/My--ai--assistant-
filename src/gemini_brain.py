@@ -54,6 +54,8 @@ def ask_gemini(prompt, history=None):
         raise RuntimeError("Neha configuration file was not found.") from None
     except PermissionError:
         raise RuntimeError("Cannot read the Neha configuration file: permission denied.") from None
+    except OSError:
+        raise RuntimeError("Could not read the Neha configuration file.") from None
     except UnicodeDecodeError:
         raise RuntimeError("Neha configuration file contains invalid text encoding.") from None
 

@@ -245,6 +245,10 @@ def main():
             if needs_action_interpretation
             else {"type": "chat"}
         )
+        if interpreted.get("type") == "error":
+            print(f"Neha: {interpreted.get('message', 'Action interpretation failed.')}")
+            continue
+
         if interpreted.get("type") == "action":
             action = interpreted["action"]
             action_commands = {

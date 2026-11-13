@@ -1,8 +1,8 @@
 import json
 try:
-    from .groq_brain import ask_groq
+    from .groq_brain import ask_groq, MAX_PROMPT_CHARS
 except ImportError:
-    from groq_brain import ask_groq
+    from groq_brain import ask_groq, MAX_PROMPT_CHARS
 
 ALLOWED_ACTIONS = {
     "battery",
@@ -37,6 +37,12 @@ If no allowed action matches, return {"type":"chat"}.
 Never invent actions or commands.
 User request:
 """ + prompt
+
+    if len(instruction) > MAX_PROMPT_CHARS:
+        return {
+            "type": "error",
+            "message": "Action request is too long to interpret."
+        }
 
     try:
         result = ask_groq(instruction)

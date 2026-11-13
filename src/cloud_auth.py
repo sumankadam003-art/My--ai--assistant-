@@ -95,6 +95,9 @@ def _auth_request(endpoint, payload):
 
 
 def sign_up(email, password):
+    if not isinstance(email, str):
+        return {"success": False, "error": "Email must be a string."}
+
     return _auth_request(
         "signup",
         {
@@ -105,6 +108,9 @@ def sign_up(email, password):
 
 
 def sign_in(email, password):
+    if not isinstance(email, str):
+        return {"success": False, "error": "Email must be a string."}
+
     return _auth_request(
         "token?grant_type=password",
         {
