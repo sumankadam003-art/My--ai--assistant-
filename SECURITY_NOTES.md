@@ -1,15 +1,46 @@
 # Security notes
 
-- The API binds to `127.0.0.1` by default. Do not expose it to a LAN or public internet; it uses plain HTTP and has no TLS layer.
-- `/chat`, `/memory/save`, and `/memory/load` require a valid Supabase access token. This remains separate from the local Neha owner account.
-- Run `python -m src.setup_owner` once to create the local owner account. The password is Neha-specific, hashed on disk, and is not your Gmail or Supabase password.
-- `/owner/login` issues a process-memory bearer session. Sessions expire after one hour by default and are revoked when the API process restarts. Login attempts are throttled in memory.
-- Android biometric password recovery can be enrolled from the Actions tab while signed in. The app stores a randomly generated recovery secret using Expo SecureStore with Android biometric authentication required. The API stores only a SHA-256 digest of that secret.
-- During password reset, Android verifies the biometric locally before SecureStore releases the recovery secret to the app. The fingerprint image/template is not read by Neha and is not sent to the API. The API verifies the secret, changes only the password hash/salt, preserves the owner ID and account data, and revokes active owner sessions.
-- Biometric recovery is device-bound. Removing app data/uninstalling the app, losing the device, or changing enrolled biometrics may invalidate the protected secret. Keep the current owner password until enrollment and a test reset have both been completed successfully. This is not a guaranteed recovery path if the device credential is lost.
-- Recovery enrollment requires an existing owner session and uses a short-lived server-side pending enrollment. Password reset attempts are throttled in memory.
-- `/actions`, `/actions/approve`, and `/actions/execute` require the local owner bearer token. The client must display the selected action and obtain explicit owner confirmation before calling `/actions/approve`. Approval receipts are single-use and expire after two minutes by default.
-- Action permissions are deny-by-default. Add only the permissions you intend to allow to `NEHA_ACTION_PERMISSIONS` in the private `.env` file. Example: `device.battery,device.volume,app.youtube`. Do not use wildcards.
+## API network exposure
+
+- The API listens on `127.0.0.1:8765` by default. `NEHA_API_HOST` can override the bind address; keep it on loopback unless a separately secured deployment is designed and reviewed.
+- The API uses plain HTTP and does not provide TLS. Do not expose it directly to a LAN or the public internet.
+- CORS currently allows the configured local Expo development origin `http://localhost:8081`. CORS is not authentication and does not protect the API from non-browser clients.
+- The `/health` endpoint is public and reports service/cloud-memory configuration status. The challenge and login endpoints are also reachable without an existing session because they establish authentication.
+
+## Local owner authentication and sessions
+
+- Create the local owner account with `python -m src.setup_owner`. This creates `data/owner_auth.json`; keep the `data/` directory private and out of version control.
+- The owner credential record stores a PBKDF2-HMAC-SHA256 password hash and salt, not the plaintext password.
+- Current API login uses `POST /auth/challenge` followed by `POST /auth/login`. Challenges expire after 120 seconds and are invalidated after a successful answer or five attempts. The challenge answer is checked using the private `NEHA_LOGIN_OFFSET` configuration.
+- The API does not expose the older `/owner/login` route. Do not assume that the setup password is submitted to the current challenge-login endpoint.
+- Successful login returns a bearer token. The API stores only the SHA-256 digest of each token in `data/owner_sessions.json`, associated with the local owner ID.
+- `src/app_api.py` configures `LocalOwnerAuth(session_ttl_seconds=None)`. Therefore sessions have no time-based expiry and survive API process restarts. This is intentional current behaviour; do not document a one-hour expiry or restart-based revocation.
+- `POST /auth/logout` revokes the presented session. The password-recovery helper also clears active sessions when it resets the password. Protect the session file and owner account file as credentials.
+
+## Endpoint access
+
+- Public endpoints: `GET /health`, `POST /auth/challenge`, and `POST /auth/login`.
+- `POST /auth/logout` requires the bearer token it is revoking.
+- The following endpoints require a valid local owner bearer session: `GET /actions`, `POST /chat`, `POST /memory/save`, `POST /memory/load`, `POST /actions/approve`, and `POST /actions/execute`.
+- The chat and cloud-memory routes do not authenticate the client with a Supabase access token. Cloud-memory operations use the server-configured `NEHA_CLOUD_OWNER_ID` and server-side Supabase configuration. Never put a Supabase service-role key in the mobile app.
+- Request bodies are limited to 100,000 bytes by the API. Chat messages are limited to 10,000 characters; saved memories are limited to 5,000 characters.
+
+## Biometric recovery
+
+- `LocalOwnerAuth` contains backend helper methods for recovery enrollment, password reset, and recovery-secret rotation. These helpers are not exposed as HTTP routes by the current `src/app_api.py`.
+- Do not assume that a complete, end-to-end biometric enrollment or password-reset workflow is available through the current API until the required routes and client flow are implemented and tested.
+- Recovery secrets are represented in the owner record by SHA-256 digests. Any future mobile recovery flow must keep the raw recovery secret in secure device storage and must not transmit biometric images or templates.
+
+## Action execution safeguards
+
+- `/actions`, `/actions/approve`, and `/actions/execute` require the local owner bearer token.
+- The client must present the selected action details and obtain explicit owner confirmation before requesting approval. The API checks `owner_confirmed: true` on `/actions/approve`.
+- Approval receipts are single-use, owner-bound, and expire after two minutes by default.
+- Action permissions are deny-by-default. Add only intended permissions to `NEHA_ACTION_PERMISSIONS` in the private `.env` file. Example: `device.battery,device.volume,app.youtube`. Do not use wildcards.
 - Existing built-in actions currently accept no arguments. Never pass model-generated shell commands or arbitrary code to an action handler.
-- An action result is reported as `executed_unverified`; this means the handler returned, not that the physical effect was independently verified.
-- Never commit `.env`, Supabase keys, access tokens, owner credential files, or private credentials.
+- An action result reported as `executed_unverified` means the handler returned; it does not mean the physical effect was independently verified.
+
+## Secret handling
+
+- Never commit `.env`, Supabase keys, access tokens, owner credential files, owner session files, recovery secrets, or other private credentials.
+- Keep backups of private owner data secure. Anyone who obtains valid session tokens or can alter local owner/session files may compromise the local owner account.
