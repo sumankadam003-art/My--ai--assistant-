@@ -34,6 +34,8 @@ class ActionAPIIntegrationTests(unittest.TestCase):
                 return {"id": "test-owner"} if token == "valid" else None
             def logout(self, token):
                 return token == "valid"
+            def create_challenge(self):
+                return {"challenge_id": "test-challenge", "challenge": 1234, "expires_in": 120}
         self.auth_patch = patch.object(app_api, "owner_auth", FakeAuth())
         self.auth_patch.start()
         self.addCleanup(self.auth_patch.stop)
