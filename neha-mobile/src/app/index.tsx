@@ -2,9 +2,10 @@ import React, { useEffect, useState } from 'react';
 import API_URL from '../apiConfig';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
-  StyleSheet, StatusBar, KeyboardAvoidingView, Platform,
+  StyleSheet, StatusBar, KeyboardAvoidingView, Platform, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { getAccessToken, getChallenge, login } from '../auth';
 
 type Message = {
   id: string;
@@ -23,6 +24,12 @@ export default function HomeScreen() {
   const [input, setInput] = useState('');
   const [mode, setMode] = useState('ONLINE');
   const [backendStatus, setBackendStatus] = useState('CHECKING');
+  const [loginVisible, setLoginVisible] = useState(false);
+  const [challengeId, setChallengeId] = useState('');
+  const [challengeNumber, setChallengeNumber] = useState('');
+  const [loginAnswer, setLoginAnswer] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [pendingMessage, setPendingMessage] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -53,11 +60,27 @@ export default function HomeScreen() {
   async function sendMessage() {
     const value = input.trim();
     if (!value) return;
+    const token = await getAccessToken();
+    if (!token) {
+      try {
+        const challenge = await getChallenge();
+        setChallengeId(challenge.challengeId);
+        setChallengeNumber(challenge.challenge);
+        setPendingMessage(value);
+        setLoginAnswer('');
+        setLoginError('');
+        setLoginVisible(true);
+      } catch (error) {
+        setLoginError(error instanceof Error ? error.message : 'Login unavailable.');
+        setLoginVisible(true);
+      }
+      return;
+    }
     setMessages(old => [...old, { id: String(Date.now()), text: value, from: 'user' }]);
     setInput('');
     setMode('THINKING');
     try {
-      const response = await fetch(`${API_URL}/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: value }) });
+      const response = await fetch(`${API_URL}/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ message: value }) });
       const data = await response.json();
       if (!response.ok) throw new Error();
       setMessages(old => [...old, { id: String(Date.now()) + '-reply', text: String(data.reply), from: 'neha' }]);
@@ -65,6 +88,18 @@ export default function HomeScreen() {
     } catch {
       setMessages(old => [...old, { id: String(Date.now()) + '-error', text: 'Could not connect to Neha AI. Check that the API server is running.', from: 'neha' }]);
       setMode('CONNECTION ERROR');
+    }
+  }
+
+  async function submitLogin() {
+    try {
+      await login(challengeId, loginAnswer);
+      setLoginVisible(false);
+      setLoginError('');
+      setInput(pendingMessage);
+      setTimeout(() => { void sendMessage(); }, 0);
+    } catch (error) {
+      setLoginError(error instanceof Error ? error.message : 'Login failed.');
     }
   }
 
@@ -218,6 +253,22 @@ export default function HomeScreen() {
             </TouchableOpacity>
           ))}
         </View>
+        <Modal visible={loginVisible} transparent animationType="fade" onRequestClose={() => setLoginVisible(false)}>
+          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.82)', justifyContent: 'center', padding: 24 }}>
+            <View style={{ backgroundColor: '#101D2A', borderColor: '#5CBFFF', borderWidth: 1, borderRadius: 18, padding: 20 }}>
+              <Text style={{ color: '#EAF6FF', fontSize: 18, fontWeight: '800' }}>NEHA OWNER LOGIN</Text>
+              <Text style={{ color: '#A9DFFF', fontSize: 15, marginTop: 14 }}>Challenge: {challengeNumber || 'Unavailable'}</Text>
+              <TextInput value={loginAnswer} onChangeText={setLoginAnswer} keyboardType="number-pad" placeholder="Enter response" placeholderTextColor="#7799B2" style={{ color: '#FFFFFF', borderColor: '#38546A', borderWidth: 1, borderRadius: 10, padding: 12, marginTop: 14 }} />
+              {!!loginError && <Text style={{ color: '#FF9B9B', marginTop: 10 }}>{loginError}</Text>}
+              <TouchableOpacity onPress={() => { void submitLogin(); }} style={{ backgroundColor: '#8DDCFF', padding: 13, borderRadius: 10, alignItems: 'center', marginTop: 16 }}>
+                <Text style={{ color: '#06111C', fontWeight: '900' }}>UNLOCK</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setLoginVisible(false)} style={{ padding: 12, alignItems: 'center' }}>
+                <Text style={{ color: '#A9DFFF' }}>CANCEL</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
