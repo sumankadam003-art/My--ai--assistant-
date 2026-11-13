@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -27,8 +28,7 @@ class ChatHistoryTests(unittest.TestCase):
 
             self.assertTrue(result)
             self.assertEqual(
-                chat_history.load_history() if history_file == chat_history.HISTORY_FILE else
-                __import__("json").loads(history_file.read_text(encoding="utf-8")),
+                json.loads(history_file.read_text(encoding="utf-8")),
                 [{"role": "user", "content": "hello"}],
             )
 
