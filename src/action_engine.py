@@ -5,6 +5,7 @@ treated as executable code or a shell command.
 """
 from dataclasses import dataclass, field
 from enum import IntEnum
+import inspect
 from threading import RLock
 from typing import Any, Callable, Dict, Mapping, Optional
 import time
@@ -229,9 +230,18 @@ class ActionEngine:
             return deny("approval_required", "Owner approval is required before execution.")
 
         try:
+            signature = inspect.signature(definition.handler)
+        except (TypeError, ValueError):
+            signature = None
+
+        if signature is not None:
+            try:
+                signature.bind(**args)
+            except TypeError:
+                return deny("invalid_arguments", "The action arguments were not accepted.")
+
+        try:
             output = definition.handler(**args)
-        except TypeError:
-            return deny("invalid_arguments", "The action arguments were not accepted.")
         except Exception:
             return deny("execution_failed", "The action handler failed.")
 
