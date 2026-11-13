@@ -45,6 +45,17 @@ class LocalOwnerAuthTests(unittest.TestCase):
             self.assertTrue(self.auth.logout(token))
             self.assertIsNone(self.auth.verify_session(token))
 
+    def test_challenge_expires_after_two_minutes(self):
+        import os
+        from unittest.mock import patch
+        self.auth.setup("govind-owner", "correct horse battery staple")
+        with patch.dict(os.environ, {"NEHA_LOGIN_OFFSET": "2003"}):
+            with patch("src.local_owner_auth.time.monotonic", side_effect=[100.0, 221.0]):
+                challenge = self.auth.create_challenge()
+                self.assertIsNone(self.auth.login_challenge(
+                    challenge["challenge_id"], str(challenge["challenge"] + 2003)
+                ))
+
     def test_challenge_rejects_five_wrong_answers(self):
         import os
         from unittest.mock import patch
