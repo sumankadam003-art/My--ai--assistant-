@@ -1,17 +1,32 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Modal, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import API_URL from '../apiConfig';
+import { getAccessToken, getChallenge, login } from '../auth';
 
 type ActionItem = { name: string; description: string; risk: string; required_permissions: string[]; requires_approval: boolean; enabled: boolean };
 
 export default function ActionsScreen() {
   const [actions, setActions] = useState<ActionItem[]>([]);
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState('Neha uses her backend identity. Review each action before approving.');
+  const [message, setMessage] = useState('Login is required to view protected actions.');
+  const [loginVisible, setLoginVisible] = useState(false);
+  const [challengeId, setChallengeId] = useState('');
+  const [challengeNumber, setChallengeNumber] = useState('');
+  const [answer, setAnswer] = useState('');
+  const [loginError, setLoginError] = useState('');
 
   const loadActions = useCallback(async () => {
     if (!API_URL) throw new Error('API address is not configured.');
-    const response = await fetch(`${API_URL}/actions`);
+    const token = await getAccessToken();
+    if (!token) {
+      const challenge = await getChallenge();
+      setChallengeId(challenge.challengeId);
+      setChallengeNumber(challenge.challenge);
+      setLoginVisible(true);
+      setMessage('Unlock Neha to view protected actions.');
+      return;
+    }
+    const response = await fetch(`${API_URL}/actions`, { headers: { Authorization: `Bearer ${token}` } });
     const data = await response.json();
     if (!response.ok || !data.success) throw new Error(data.error || 'Could not load actions.');
     setActions(Array.isArray(data.actions) ? data.actions : []);
@@ -28,14 +43,16 @@ export default function ActionsScreen() {
     if (!API_URL) return;
     setBusy(true);
     try {
+      const token = await getAccessToken();
+      if (!token) throw new Error('Login required. Refresh and sign in.');
       const approvalResponse = await fetch(`${API_URL}/actions/approve`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ action: action.name, arguments: {}, owner_confirmed: true }),
       });
       const approval = await approvalResponse.json();
       if (!approvalResponse.ok || !approval.success || !approval.approval_token) throw new Error(approval.error || 'Approval could not be issued.');
       const executionResponse = await fetch(`${API_URL}/actions/execute`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ action: action.name, arguments: {}, approval_token: approval.approval_token }),
       });
       const result = await executionResponse.json();
@@ -47,6 +64,17 @@ export default function ActionsScreen() {
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Action failed.');
     } finally { setBusy(false); }
+  }
+
+  async function submitLogin() {
+    try {
+      await login(challengeId, answer);
+      setLoginVisible(false);
+      setLoginError('');
+      await loadActions();
+    } catch (error) {
+      setLoginError(error instanceof Error ? error.message : 'Login failed.');
+    }
   }
 
   function confirmAction(action: ActionItem) {
@@ -80,6 +108,21 @@ export default function ActionsScreen() {
         {busy && <ActivityIndicator style={s.loader} color="#8DDCFF" />}
         <Text style={s.footer}>Keep Neha's API bound to localhost. Never put the Supabase service-role key in this app.</Text>
       </ScrollView>
+        <Modal visible={loginVisible} transparent animationType="fade" onRequestClose={() => setLoginVisible(false)}>
+          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.82)', justifyContent: 'center', padding: 24 }}>
+            <View style={{ backgroundColor: '#101D2A', borderColor: '#5CBFFF', borderWidth: 1, borderRadius: 18, padding: 20 }}>
+              <Text style={{ color: '#EAF6FF', fontSize: 18, fontWeight: '800' }}>NEHA OWNER LOGIN</Text>
+              <Text style={{ color: '#A9DFFF', fontSize: 15, marginTop: 14 }}>Challenge: {challengeNumber}</Text>
+              <TextInput value={answer} onChangeText={setAnswer} keyboardType="number-pad" placeholder="Enter response" placeholderTextColor="#7799B2" style={{ color: '#FFFFFF', borderColor: '#38546A', borderWidth: 1, borderRadius: 10, padding: 12, marginTop: 14 }} />
+              {!!loginError && <Text style={{ color: '#FF9B9B', marginTop: 10 }}>{loginError}</Text>}
+              <TouchableOpacity onPress={() => { void submitLogin(); }} style={{ backgroundColor: '#8DDCFF', padding: 13, borderRadius: 10, alignItems: 'center', marginTop: 16 }}>
+                <Text style={{ color: '#06111C', fontWeight: '900' }}>UNLOCK</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setLoginVisible(false)} style={{ padding: 12, alignItems: 'center' }}><Text style={{ color: '#A9DFFF' }}>CANCEL</Text></TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
     </SafeAreaView>
   );
 }
