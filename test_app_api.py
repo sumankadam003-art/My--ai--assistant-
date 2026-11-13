@@ -29,6 +29,14 @@ class FakeActionService:
 class ActionAPIIntegrationTests(unittest.TestCase):
     def setUp(self):
         self.service = FakeActionService()
+        class FakeAuth:
+            def verify_session(self, token):
+                return {"id": "test-owner"} if token == "valid" else None
+            def logout(self, token):
+                return token == "valid"
+        self.auth_patch = patch.object(app_api, "owner_auth", FakeAuth())
+        self.auth_patch.start()
+        self.addCleanup(self.auth_patch.stop)
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), app_api.NehaAPIHandler)
         self.server.daemon_threads = True
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
@@ -43,44 +51,50 @@ class ActionAPIIntegrationTests(unittest.TestCase):
         self.server.server_close()
         self.thread.join(timeout=2)
 
-    def request(self, method, path, body=None):
+    def request(self, method, path, body=None, token=None):
         data = None if body is None else json.dumps(body).encode()
+        headers = {"Content-Type": "application/json"}
+        if token:
+            headers["Authorization"] = "Bearer " + token
         request = Request(self.base + path, data=data,
-                          headers={"Content-Type": "application/json"}, method=method)
+                          headers=headers, method=method)
         try:
             response = urlopen(request, timeout=3)
         except HTTPError as error:
             response = error
         return response.code, json.loads(response.read().decode())
 
-    def test_actions_list_without_user_login(self):
-        status, result = self.request("GET", "/actions")
+    def test_actions_list_requires_login(self):
+        status, _ = self.request("GET", "/actions")
+        self.assertEqual(status, 401)
+        status, result = self.request("GET", "/actions", token="valid")
         self.assertEqual(status, 200)
         self.assertEqual(result["actions"][0]["name"], "safe test")
 
     def test_action_requires_explicit_confirmation(self):
-        status, _ = self.request("POST", "/actions/approve", {"action": "safe test"})
+        status, _ = self.request("POST", "/actions/approve", {"action": "safe test"}, token="valid")
         self.assertEqual(status, 403)
         self.assertEqual(self.service.executed, [])
 
     def test_confirmed_action_executes_with_single_use_approval(self):
         status, approval = self.request("POST", "/actions/approve", {
             "action": "safe test", "arguments": {}, "owner_confirmed": True
-        })
+        }, token="valid")
         self.assertEqual(status, 200)
         status, result = self.request("POST", "/actions/execute", {
             "action": "safe test", "arguments": {},
             "approval_token": approval["approval_token"]
-        })
+        }, token="valid")
         self.assertEqual(status, 200)
         self.assertEqual(result["status"], "executed_unverified")
         self.assertEqual(self.service.executed, ["safe test"])
 
-    def test_personal_login_routes_are_removed(self):
-        for path in ("/owner/login", "/owner/logout", "/owner/password/reset",
-                     "/auth/signup", "/auth/login"):
-            status, _ = self.request("POST", path, {})
-            self.assertEqual(status, 404, path)
+    def test_challenge_login_routes_are_available(self):
+        status, challenge = self.request("POST", "/auth/challenge", {})
+        self.assertEqual(status, 200)
+        self.assertTrue(challenge["challenge_id"])
+        status, _ = self.request("POST", "/auth/logout", {}, token="invalid")
+        self.assertEqual(status, 401)
 
 
 if __name__ == "__main__":
