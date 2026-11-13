@@ -38,6 +38,9 @@ def _auth_request(endpoint, payload):
         except ValueError:
             data = {}
 
+        if not isinstance(data, dict):
+            data = {}
+
         if not response.is_success:
             message = (
                 data.get("msg")
@@ -52,9 +55,6 @@ def _auth_request(endpoint, payload):
                 "error": str(message)[:300],
                 "status_code": response.status_code,
             }
-
-        if not isinstance(data, dict):
-            data = {}
 
         user = data.get("user") or data
         session = data.get("session") or data
