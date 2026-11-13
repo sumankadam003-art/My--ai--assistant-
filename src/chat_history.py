@@ -20,6 +20,7 @@ def load_history():
         return []
 
 def save_history(history):
+    temp = None
     try:
         HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
         temp = HISTORY_FILE.with_suffix(".tmp")
@@ -30,8 +31,9 @@ def save_history(history):
         os.replace(temp, HISTORY_FILE)
         return True
     except (OSError, TypeError, ValueError):
-        try:
-            temp.unlink(missing_ok=True)
-        except OSError:
-            pass
+        if temp is not None:
+            try:
+                temp.unlink(missing_ok=True)
+            except OSError:
+                pass
         return False
