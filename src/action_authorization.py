@@ -31,9 +31,8 @@ class OwnerAuthorizer:
         self._session_verifier = session_verifier
 
     def authenticate_owner(self, access_token: Optional[str] = None) -> Mapping:
-        # No end-user login is used. The backend identity is fixed at startup.
         if self._session_verifier is None:
-            return {"id": self._owner_user_id}
+            raise AuthorizationError("Owner session verification is not configured.")
         if not isinstance(access_token, str) or not access_token.strip():
             raise AuthorizationError("A valid login session is required.")
         try:
