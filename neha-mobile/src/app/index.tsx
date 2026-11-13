@@ -82,6 +82,16 @@ export default function HomeScreen() {
     try {
       const response = await fetch(`${API_URL}/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ message: value }) });
       const data = await response.json();
+      if (response.status === 401) {
+        await logout();
+        const challenge = await getChallenge();
+        setChallengeId(challenge.challengeId);
+        setChallengeNumber(challenge.challenge);
+        setPendingMessage(value);
+        setLoginVisible(true);
+        setLoginError('Your session expired. Sign in again.');
+        return;
+      }
       if (!response.ok) throw new Error();
       setMessages(old => [...old, { id: String(Date.now()) + '-reply', text: String(data.reply), from: 'neha' }]);
       setMode('ONLINE');
