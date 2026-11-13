@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import API_URL from '../apiConfig';
 import {
-  View, Text, TextInput, TouchableOpacity, ScrollView,
+  Alert, View, Text, TextInput, TouchableOpacity, ScrollView,
   StyleSheet, StatusBar, KeyboardAvoidingView, Platform, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { getAccessToken, getChallenge, login } from '../auth';
+import { getAccessToken, getChallenge, login, logout } from '../auth';
 
 type Message = {
   id: string;
@@ -129,7 +129,7 @@ export default function HomeScreen() {
           </View>
           <TouchableOpacity
             style={s.headerBtn}
-            onPress={() => notice('Settings', 'Assistant settings will be added here.')}
+            onPress={() => Alert.alert('Owner session', 'Log out of Neha on this device?', [{ text: 'Cancel', style: 'cancel' }, { text: 'Log out', style: 'destructive', onPress: () => { void logout().then(() => notice('Logged out', 'A fresh login challenge is required before using protected features.')); } }])}
           >
             <Text style={s.headerBtnText}>⚙</Text>
           </TouchableOpacity>
