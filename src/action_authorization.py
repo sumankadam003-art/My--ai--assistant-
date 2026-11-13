@@ -25,8 +25,8 @@ class OwnerAuthorizer:
     ):
         if not isinstance(owner_user_id, str) or not owner_user_id.strip():
             raise ValueError("A configured owner user ID is required.")
-        if session_verifier is not None and not callable(session_verifier):
-            raise TypeError("Session verifier must be callable when provided.")
+        if not callable(session_verifier):
+            raise TypeError("A callable session verifier is required.")
         self._owner_user_id = owner_user_id.strip()
         self._session_verifier = session_verifier
 
