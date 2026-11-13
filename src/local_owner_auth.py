@@ -19,11 +19,14 @@ class LocalOwnerAuth:
     RECOVERY_TTL_SECONDS = 300
 
     def __init__(self, path="data/owner_auth.json", session_ttl_seconds=3600):
-        if not isinstance(session_ttl_seconds, int) or not 60 <= session_ttl_seconds <= 86400:
-            raise ValueError("Session lifetime must be between 60 and 86400 seconds.")
+        if session_ttl_seconds is not None and (
+            not isinstance(session_ttl_seconds, int) or not 60 <= session_ttl_seconds <= 86400
+        ):
+            raise ValueError("Session lifetime must be None or between 60 and 86400 seconds.")
         self.path = Path(path)
         self.session_ttl_seconds = session_ttl_seconds
-        self._sessions = {}
+        self.sessions_path = self.path.with_name("owner_sessions.json")
+        self._challenges = {}
         self._pending_recovery = {}
         self._lock = threading.RLock()
 
@@ -122,24 +125,94 @@ class LocalOwnerAuth:
         password_ok = hmac.compare_digest(candidate, expected)
         if not (username_ok and password_ok):
             return None
+        return self._issue_session(record["owner_id"], self.session_ttl_seconds)
+
+    def _read_sessions(self):
+        try:
+            value = json.loads(self.sessions_path.read_text(encoding="utf-8"))
+            return value if isinstance(value, dict) else {}
+        except FileNotFoundError:
+            return {}
+        except (OSError, ValueError):
+            raise OwnerAccountError("Owner sessions are unreadable; refusing authentication.")
+
+    def _write_sessions(self, sessions):
+        self.sessions_path.parent.mkdir(parents=True, exist_ok=True)
+        temp = self.sessions_path.with_name(self.sessions_path.name + ".tmp")
+        fd = os.open(str(temp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(sessions, handle)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp, self.sessions_path)
+        os.chmod(self.sessions_path, 0o600)
+
+    def _issue_session(self, owner_id, ttl):
         token = secrets.token_urlsafe(32)
+        expires = None if ttl is None else time.time() + ttl
         with self._lock:
-            now = time.monotonic()
-            self._sessions[token] = (record["owner_id"], now + self.session_ttl_seconds)
-            self._purge(now)
-        return {"access_token": token, "token_type": "Bearer", "expires_in": self.session_ttl_seconds}
+            sessions = self._read_sessions()
+            sessions[hashlib.sha256(token.encode()).hexdigest()] = {
+                "owner_id": owner_id, "expires_at": expires
+            }
+            self._write_sessions(sessions)
+        return {"access_token": token, "token_type": "Bearer",
+                "expires_in": ttl, "expires_at": expires}
+
+    def create_challenge(self):
+        if not self.is_configured():
+            raise OwnerAccountError("Owner account is not configured.")
+        challenge_id = secrets.token_urlsafe(18)
+        number = secrets.randbelow(9000) + 1000
+        now = time.monotonic()
+        with self._lock:
+            self._challenges[challenge_id] = {
+                "number": number, "expires": now + 120, "attempts": 0
+            }
+            self._challenges = {
+                key: value for key, value in self._challenges.items()
+                if value["expires"] > now
+            }
+        return {"challenge_id": challenge_id, "challenge": number, "expires_in": 120}
+
+    def login_challenge(self, challenge_id, answer):
+        if not isinstance(challenge_id, str) or not isinstance(answer, str) or len(answer) > 8:
+            return None
+        try:
+            offset = int(os.environ["NEHA_LOGIN_OFFSET"])
+        except (KeyError, TypeError, ValueError):
+            raise OwnerAccountError("NEHA_LOGIN_OFFSET must be configured privately.")
+        with self._lock:
+            challenge = self._challenges.get(challenge_id)
+            if not challenge or challenge["expires"] <= time.monotonic():
+                self._challenges.pop(challenge_id, None)
+                return None
+            challenge["attempts"] += 1
+            expected = str(challenge["number"] + offset)
+            valid = hmac.compare_digest(answer.strip(), expected)
+            if valid or challenge["attempts"] >= 5:
+                self._challenges.pop(challenge_id, None)
+            if not valid:
+                return None
+        return self._issue_session(self.owner_id, None)
 
     def verify_session(self, token):
         if not isinstance(token, str) or not token:
             return None
-        now = time.monotonic()
+        digest = hashlib.sha256(token.encode()).hexdigest()
         with self._lock:
-            self._purge(now)
-            session = self._sessions.get(token)
-        if session is None:
-            return None
+            session = self._read_sessions().get(digest)
+            if not isinstance(session, dict):
+                return None
+            expires = session.get("expires_at")
+            if expires is not None and (not isinstance(expires, (int, float)) or expires <= time.time()):
+                sessions = self._read_sessions()
+                sessions.pop(digest, None)
+                self._write_sessions(sessions)
+                return None
         record = self._read_record()
-        return {"id": session[0]} if hmac.compare_digest(session[0], record["owner_id"]) else None
+        owner_id = session.get("owner_id")
+        return {"id": owner_id} if isinstance(owner_id, str) and hmac.compare_digest(owner_id, record["owner_id"]) else None
 
     def begin_recovery_enrollment(self, session_token):
         session = self.verify_session(session_token)
@@ -217,11 +290,12 @@ class LocalOwnerAuth:
             return isinstance(active, str) and hmac.compare_digest(active, digest)
 
     def logout(self, token):
-        if not isinstance(token, str):
+        if not isinstance(token, str) or not token:
             return False
+        digest = hashlib.sha256(token.encode()).hexdigest()
         with self._lock:
-            return self._sessions.pop(token, None) is not None
-
-    def _purge(self, now):
-        for token in [key for key, (_, expiry) in self._sessions.items() if expiry <= now]:
-            self._sessions.pop(token, None)
+            sessions = self._read_sessions()
+            existed = sessions.pop(digest, None) is not None
+            if existed:
+                self._write_sessions(sessions)
+            return existed
