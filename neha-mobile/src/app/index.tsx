@@ -57,8 +57,8 @@ export default function HomeScreen() {
   }, []);
 
 
-  async function sendMessage() {
-    const value = input.trim();
+  async function sendMessage(override?: string) {
+    const value = (override ?? input).trim();
     if (!value) return;
     const token = await getAccessToken();
     if (!token) {
@@ -96,8 +96,8 @@ export default function HomeScreen() {
       await login(challengeId, loginAnswer);
       setLoginVisible(false);
       setLoginError('');
-      setInput(pendingMessage);
-      setTimeout(() => { void sendMessage(); }, 0);
+      setInput('');
+      void sendMessage(pendingMessage);
     } catch (error) {
       setLoginError(error instanceof Error ? error.message : 'Login failed.');
     }
