@@ -40,7 +40,7 @@ jobs:
           import glob
           import unittest
 
-          excluded = {"test_cloud_memory.py"}
+          excluded = {"test_cloud_memory"}
           loader = unittest.TestLoader()
           modules = [
               path[:-3]
