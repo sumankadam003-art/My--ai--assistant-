@@ -10,7 +10,8 @@ class BuiltinActionRegistryTests(unittest.TestCase):
             manager = build_default_action_manager()
         actions = manager.list_actions()
         self.assertEqual({item["name"] for item in actions}, set(BUILTIN_ACTIONS))
-        self.assertTrue(all(item["enabled"] for item in actions))
+        self.assertTrue(all(item["enabled"] for item in actions if item["name"] != "send_sms"))
+        self.assertFalse(next(item for item in actions if item["name"] == "send_sms")["enabled"])
         self.assertTrue(all(item["requires_approval"] for item in actions))
         run_action.assert_not_called()
 
