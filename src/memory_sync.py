@@ -128,7 +128,7 @@ def save_memory_safely(memory, user_id=None, access_token=None):
 
     cloud_saved = False
 
-    if user_id and access_token:
+    if user_id:
         try:
             from cloud_memory import save_cloud_memory
             cloud_saved = save_cloud_memory(
