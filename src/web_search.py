@@ -53,13 +53,15 @@ def web_search(query, limit=5):
 
         for i, result in enumerate(data.get("results", []), 1):
             output.append(
-                f"{i}. {result.get('title', 'Untitled')}\n"
-                f"{result.get('url', '')}\n"
+                f"{i}. {result.get('title', 'Untitled')}\\n"
+                f"{result.get('url', '')}\\n"
                 f"{result.get('content', '')}"
             )
 
-        return "\n\n".join(output) if output else "No search results returned."
+        return "\\n\\n".join(output) if output else "No search results returned."
 
+    except RuntimeError as error:
+        return f"Web search configuration error: {error}"
     except urllib.error.HTTPError as error:
         return f"Web search service returned HTTP {error.code}."
     except urllib.error.URLError:
