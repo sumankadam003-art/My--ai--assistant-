@@ -130,11 +130,21 @@ export default function ActionsScreen() {
     if (action.name === 'send_sms') {
       const recipient = smsRecipient.trim();
       const messageText = smsMessage;
-      if (!/^\\+?[1-9][0-9]{6,14}$/.test(recipient.replace(/[\\s()\\-]/g, '')) || !messageText.trim() || messageText.length > 1600) {
+      const normalizedRecipient = recipient.replaceAll(' ', '').replaceAll('-', '').replaceAll('(', '').replaceAll(')', '');
+      const digits = normalizedRecipient.startsWith('+') ? normalizedRecipient.slice(1) : normalizedRecipient;
+      const phoneValid = /^[1-9][0-9]{6,14}$/.test(digits) &&
+        (normalizedRecipient === digits || normalizedRecipient === `+${digits}`);
+      if (!phoneValid || !messageText.trim() || messageText.length > 1600) {
         setMessage('Enter a valid phone number and a message of 1–1600 characters.');
         return;
       }
-      Alert.alert('Review SMS details', `Recipient: ${recipient}\\n\\nMessage:\\n${messageText}\\n\\nNeha will open your phone’s SMS app. You must review and press Send there.`,
+      Alert.alert('Review SMS details',
+        `Recipient: ${recipient}
+
+Message:
+${messageText}
+
+Neha will open your phone’s SMS app. You must review and press Send there.`,
         [{ text: 'Cancel', style: 'cancel' }, { text: 'Continue to SMS app', onPress: () => { void approveAndRun(action, { recipient, message: messageText }); } }]);
       return;
     }
