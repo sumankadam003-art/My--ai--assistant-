@@ -26,7 +26,7 @@ class NehaGatewayTests(unittest.TestCase):
             "src.neha_gateway.load_cloud_memories",
             return_value=[{"memory": "I am a doctor"}],
         ):
-            memories = gateway._get_memories("Tell me about it", user_id="owner-1")
+            memories = gateway._get_memories("about it", user_id="owner-1")
 
         self.assertEqual(memories, [])
 
