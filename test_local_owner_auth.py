@@ -186,7 +186,7 @@ class LocalOwnerAuthTests(unittest.TestCase):
         import os
         from unittest.mock import patch
         self.auth.setup("govind-owner", "correct horse battery staple")
-        other = LocalOwnerAuth(Path(self.temp.name) / "other-owner.json")
+        other = LocalOwnerAuth(self.path)
         with patch.dict(os.environ, {"NEHA_LOGIN_OFFSET": "2003"}):
             with patch("src.local_owner_auth._CHALLENGE_CREATION_TIMES", []):
                 for _ in range(self.auth.MAX_CHALLENGES_PER_WINDOW):
