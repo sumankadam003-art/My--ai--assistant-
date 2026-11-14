@@ -32,7 +32,7 @@ class SmsArgumentValidationTests(unittest.TestCase):
                 )
 
     def test_rejects_empty_oversized_or_control_character_message(self):
-        invalid_messages = ("", " " * 3, "x" * 1601, "hello\\x00world")
+        invalid_messages = ("", " " * 3, "x" * 1601, "hello\x00world")
         for message in invalid_messages:
             with self.subTest(message_length=len(message)), self.assertRaises(ValueError):
                 AuthorizedActionService._validate_arguments(
