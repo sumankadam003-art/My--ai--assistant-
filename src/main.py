@@ -10,7 +10,7 @@ from neha_gateway import NehaGateway
 from web_search import web_search
 from voice import listen, speak
 from memory_brain import suggest_memories
-from memory import load_memories, save_memory, delete_memory
+from memory import MemoryStoreError, load_memories, save_memory, delete_memory
 from chat_history import load_history, save_history
 
 class BrainManager:
@@ -135,7 +135,12 @@ def main():
             break
 
         if prompt == "/memories":
-            for i, fact in enumerate(load_memories(), 1):
+            try:
+                memories = load_memories()
+            except MemoryStoreError as exc:
+                print(f"Neha: Cannot read memories safely: {exc}")
+                continue
+            for i, fact in enumerate(memories, 1):
                 print(f"{i}. {fact}")
             continue
 
@@ -154,7 +159,11 @@ def main():
             continue
 
         if prompt == "/forget":
-            memories = load_memories()
+            try:
+                memories = load_memories()
+            except MemoryStoreError as exc:
+                print(f"Neha: Cannot modify memories safely: {exc}")
+                continue
             for i, fact in enumerate(memories, 1):
                 print(f"{i}. {fact}")
             try:
@@ -306,8 +315,14 @@ def main():
                     print(f"Neha: Memory suggestions unavailable: {e}")
                     suggested_facts = []
 
+                try:
+                    existing_memories = load_memories()
+                except MemoryStoreError as exc:
+                    print(f"Neha: Memory suggestions cannot be saved safely: {exc}")
+                    existing_memories = None
+
                 for fact in suggested_facts:
-                    if fact not in load_memories():
+                    if existing_memories is not None and fact not in existing_memories:
                         print(f"Neha suggests saving: {fact}")
                         if input("Save this memory? (y/n): ").strip().lower() in ("y", "yes"):
                             status = save_memory_safely(fact)
