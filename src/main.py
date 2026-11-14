@@ -6,6 +6,7 @@ from intent_interpreter import interpret_request
 from actions import run_action
 from plugin_manager import ActionPluginManager
 from memory_sync import save_memory_safely
+from cloud_memory import NEHA_CLOUD_OWNER_ID
 from neha_gateway import NehaGateway
 from web_search import web_search
 from voice import listen, speak
@@ -147,7 +148,7 @@ def main():
         if prompt == "/remember":
             fact = input("Memory to save: ").strip()
             if fact and input("Save memory? (y/yes/no): ").strip().lower() in ("y", "yes"):
-                status = save_memory_safely(fact)
+                status = save_memory_safely(fact, user_id=NEHA_CLOUD_OWNER_ID)
                 messages = {
                     "cloud": "Saved to cloud.",
                     "cloud_local_failed": "Saved to cloud, but local backup failed.",
@@ -283,7 +284,7 @@ def main():
 
         if prompt:
             try:
-                answer = manager.ask(prompt, history)
+                answer = manager.ask(prompt, history, user_id=NEHA_CLOUD_OWNER_ID)
             except Exception as e:
                 print(f"Neha: I couldn't get an AI response. Please try again. ({e})")
                 continue
