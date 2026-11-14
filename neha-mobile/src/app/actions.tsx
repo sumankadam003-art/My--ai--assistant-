@@ -14,6 +14,8 @@ export default function ActionsScreen() {
   const [challengeNumber, setChallengeNumber] = useState('');
   const [answer, setAnswer] = useState('');
   const [loginError, setLoginError] = useState('');
+  const [smsRecipient, setSmsRecipient] = useState('');
+  const [smsMessage, setSmsMessage] = useState('');
 
   const loadActions = useCallback(async () => {
     if (!API_URL) throw new Error('API address is not configured.');
@@ -48,7 +50,7 @@ export default function ActionsScreen() {
     return () => { active = false; };
   }, [loadActions]);
 
-  async function approveAndRun(action: ActionItem) {
+  async function approveAndRun(action: ActionItem, actionArguments: Record<string, string> = {}) {
     if (!API_URL) return;
     setBusy(true);
     try {
@@ -56,13 +58,13 @@ export default function ActionsScreen() {
       if (!token) throw new Error('Login required. Refresh and sign in.');
       const approvalResponse = await fetch(`${API_URL}/actions/approve`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ action: action.name, arguments: {}, owner_confirmed: true }),
+        body: JSON.stringify({ action: action.name, arguments: actionArguments, owner_confirmed: true }),
       });
       const approval = await approvalResponse.json();
       if (!approvalResponse.ok || !approval.success || !approval.approval_token) throw new Error(approval.error || 'Approval could not be issued.');
       const executionResponse = await fetch(`${API_URL}/actions/execute`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ action: action.name, arguments: {}, approval_token: approval.approval_token }),
+        body: JSON.stringify({ action: action.name, arguments: actionArguments, approval_token: approval.approval_token }),
       });
       const result = await executionResponse.json();
       if (!executionResponse.ok) throw new Error(result.error || 'Action request failed.');
@@ -106,6 +108,17 @@ export default function ActionsScreen() {
   }
 
   function confirmAction(action: ActionItem) {
+    if (action.name === 'send_sms') {
+      const recipient = smsRecipient.trim();
+      const messageText = smsMessage;
+      if (!/^\\+?[1-9][0-9]{6,14}$/.test(recipient.replace(/[\\s()\\-]/g, '')) || !messageText.trim() || messageText.length > 1600) {
+        setMessage('Enter a valid phone number and a message of 1–1600 characters.');
+        return;
+      }
+      Alert.alert('Review SMS details', `Recipient: ${recipient}\\n\\nMessage:\\n${messageText}\\n\\nNeha will open your phone’s SMS app. You must review and press Send there.`,
+        [{ text: 'Cancel', style: 'cancel' }, { text: 'Continue to SMS app', onPress: () => { void approveAndRun(action, { recipient, message: messageText }); } }]);
+      return;
+    }
     Alert.alert('Confirm device action',
       `Neha is requesting permission to: ${action.description}\n\nPermission: ${action.required_permissions.join(', ')}\nRisk: ${action.risk.toUpperCase()}\n\nDo you want to run it now?`,
       [{ text: 'Cancel', style: 'cancel' }, { text: 'Approve & Run', onPress: () => { void approveAndRun(action); } }]);
@@ -127,6 +140,15 @@ export default function ActionsScreen() {
           <View key={action.name} style={s.actionCard}>
             <View style={s.actionHeading}><Text style={s.actionName}>{action.description}</Text><Text style={s.risk}>{action.risk.toUpperCase()}</Text></View>
             <Text style={s.permission}>Permission: {action.required_permissions.join(', ')}</Text>
+            {action.name === 'send_sms' && (
+              <View style={s.smsForm}>
+                <Text style={s.smsLabel}>RECIPIENT PHONE NUMBER</Text>
+                <TextInput value={smsRecipient} onChangeText={setSmsRecipient} keyboardType="phone-pad" autoComplete="tel" placeholder="+91 9876543210" placeholderTextColor="#7799B2" style={s.smsInput} maxLength={20} />
+                <Text style={s.smsLabel}>MESSAGE (MAX 1600 CHARACTERS)</Text>
+                <TextInput value={smsMessage} onChangeText={setSmsMessage} multiline textAlignVertical="top" placeholder="Write your message..." placeholderTextColor="#7799B2" style={[s.smsInput, s.smsMessage]} maxLength={1600} />
+                <Text style={s.smsCount}>{smsMessage.length}/1600</Text>
+              </View>
+            )}
             <TouchableOpacity style={[s.primary, !action.enabled && s.disabled]} disabled={busy || !action.enabled} onPress={() => confirmAction(action)}>
               <Text style={s.primaryText}>{action.enabled ? 'REVIEW & APPROVE' : 'DISABLED'}</Text>
             </TouchableOpacity>
@@ -172,5 +194,8 @@ const s = StyleSheet.create({
   actionName: { color: '#F1F7FF', fontSize: 14, fontWeight: '800', flex: 1 },
   risk: { color: '#FFD18A', fontSize: 9, fontWeight: '900', marginLeft: 8 },
   permission: { color: '#8FA9BD', fontSize: 10, marginTop: 8 }, disabled: { opacity: 0.45 },
+  smsForm: { marginTop: 14, gap: 8 }, smsLabel: { color: '#8DDAFF', fontSize: 9, fontWeight: '900', letterSpacing: 1 },
+  smsInput: { color: '#FFFFFF', backgroundColor: '#07101A', borderColor: '#38546A', borderWidth: 1, borderRadius: 9, padding: 11, fontSize: 13 },
+  smsMessage: { minHeight: 100, maxHeight: 180 }, smsCount: { color: '#8FA9BD', fontSize: 10, textAlign: 'right' },
   loader: { marginTop: 16 }, footer: { color: '#71899E', fontSize: 10, lineHeight: 16, marginTop: 20 },
 });
