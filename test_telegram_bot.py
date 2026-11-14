@@ -78,11 +78,20 @@ class TelegramBotTests(unittest.TestCase):
             ), patch.object(
                 telegram_bot.gateway, "ask", return_value="hello back"
             ) as ask:
+                # Capture the history at invocation time. handle_message later
+                # appends the current exchange to the same list object.
+                captured = []
+                ask.side_effect = lambda prompt, history, **kwargs: (
+                    captured.append((prompt, list(history), kwargs))
+                    or "hello back"
+                )
                 await telegram_bot.handle_message(update, context)
 
-            ask.assert_called_once_with(
-                "hello", [], user_id="cloud-owner"
+            self.assertEqual(
+                captured,
+                [("hello", [], {"user_id": "cloud-owner"})],
             )
+            ask.assert_called_once()
 
         asyncio.run(run())
 
