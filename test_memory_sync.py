@@ -52,5 +52,17 @@ class MemorySyncTests(unittest.TestCase):
         cloud_save.assert_called_once_with("owner-1", "Local memory")
 
 
+    @patch("memory.save_memory", return_value=True)
+    @patch("cloud_memory.save_cloud_memory", return_value=True)
+    def test_owner_id_allows_cloud_save_without_access_token(
+        self, cloud_save, local_save
+    ):
+        result = memory_sync.save_memory_safely(
+            "Owner memory", user_id="owner-1"
+        )
+        self.assertEqual(result, "cloud")
+        cloud_save.assert_called_once_with("owner-1", "Owner memory")
+
+
 if __name__ == "__main__":
     unittest.main()
