@@ -10,7 +10,8 @@ class BuiltinActionRegistryTests(unittest.TestCase):
             manager = build_default_action_manager()
         actions = manager.list_actions()
         self.assertEqual({item["name"] for item in actions}, set(BUILTIN_ACTIONS))
-        self.assertTrue(all(item["enabled"] for item in actions))
+        self.assertTrue(all(item["enabled"] for item in actions if item["name"] != "send_sms"))
+        self.assertFalse(next(item for item in actions if item["name"] == "send_sms")["enabled"])
         self.assertTrue(all(item["requires_approval"] for item in actions))
         run_action.assert_not_called()
 
@@ -29,6 +30,16 @@ class BuiltinActionRegistryTests(unittest.TestCase):
 
         self.assertEqual(result, "termux opened")
         run_action.assert_called_once_with("open youtube")
+
+    def test_send_sms_is_registered_with_validated_handler_but_disabled_until_native_sender(self):
+        manager = build_default_action_manager()
+        action = manager.get_action("send_sms")
+        metadata = {item["name"]: item for item in manager.list_actions()}["send_sms"]
+        self.assertIsNotNone(action)
+        self.assertEqual(action.permission, "device.sms")
+        self.assertFalse(metadata["enabled"])
+        self.assertEqual(action.handler(" +919876543210", "Hello"),
+                         "SMS sending is not enabled until the Android native sender is installed.")
 
     def test_mobile_url_handlers_do_not_call_termux_run_action(self):
         with patch("src.action_registry.run_action") as run_action:

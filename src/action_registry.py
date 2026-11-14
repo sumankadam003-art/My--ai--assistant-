@@ -29,6 +29,7 @@ BUILTIN_ACTIONS = {
     "open instagram": ("open instagram", "app.instagram"),
     "toast": ("toast", "device.notification"),
     "speak": ("speak", "device.speech"),
+    "send_sms": ("send_sms", "device.sms"),
 }
 
 
@@ -39,7 +40,10 @@ def build_default_action_manager(*, mobile_url_launch=False):
 
     manager = ActionPluginManager()
     for name, (command, permission) in BUILTIN_ACTIONS.items():
-        if mobile_url_launch and name in MOBILE_ACTION_URLS:
+        if name == "send_sms":
+            def handler(recipient, message):
+                return "SMS sending is not enabled until the Android native sender is installed."
+        elif mobile_url_launch and name in MOBILE_ACTION_URLS:
             handler = lambda: "Mobile launch authorized."
         else:
             handler = lambda command=command: run_action(command)
@@ -52,4 +56,8 @@ def build_default_action_manager(*, mobile_url_launch=False):
             requires_approval=True,
             category="device" if permission.startswith("device.") else "apps",
         )
+        if name == "send_sms":
+            # Keep the backend contract registered but fail closed until Stage 3
+            # supplies the Android native SMS implementation.
+            manager.disable(name)
     return manager

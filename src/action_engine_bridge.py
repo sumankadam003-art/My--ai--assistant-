@@ -3,7 +3,7 @@
 This adapter does not execute anything during registration. A caller must
 supply a real permission checker and must obtain owner approval separately.
 """
-from typing import Callable, Optional
+from typing import Callable, Optional, Mapping
 
 try:
     from .action_engine import ActionEngine, RiskLevel
@@ -42,8 +42,8 @@ class ActionEngineBridge:
                     "Plugin metadata changed during bridge registration: " + name
                 )
 
-            def invoke(plugin=plugin):
-                return plugin.handler()
+            def invoke(plugin=plugin, **arguments):
+                return plugin.handler(**arguments)
 
             self.engine.register(
                 name=name,
@@ -65,6 +65,7 @@ class ActionEngineBridge:
         name: str,
         *,
         actor: str,
+        arguments: Optional[Mapping] = None,
         approved: bool = False,
     ):
         """Execute a registered plugin only after policy and approval checks.
@@ -74,6 +75,7 @@ class ActionEngineBridge:
         """
         return self.engine.execute(
             name,
+            arguments=arguments,
             actor=actor,
             approved=approved,
         )
