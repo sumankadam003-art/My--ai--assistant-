@@ -55,9 +55,9 @@ jobs:
           PY
 
   mobile-checks:
-    name: Mobile checks (Expo / TypeScript)
+    name: Mobile checks (Expo / TypeScript / Android bundle)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: neha-mobile
@@ -77,6 +77,9 @@ jobs:
 
       - name: Check TypeScript types
         run: npx tsc --noEmit
+
+      - name: Export Android bundle with Expo Metro
+        run: npx expo export --platform android
 
   repository-hygiene:
     name: Repository secret-file guard
