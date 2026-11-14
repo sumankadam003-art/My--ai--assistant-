@@ -17,6 +17,7 @@ export default function ActionsScreen() {
   const [loginError, setLoginError] = useState('');
   const [smsRecipient, setSmsRecipient] = useState('');
   const [smsMessage, setSmsMessage] = useState('');
+  const [smsReview, setSmsReview] = useState<{ action: ActionItem; recipient: string; message: string } | null>(null);
 
   const loadActions = useCallback(async () => {
     if (!API_URL) throw new Error('API address is not configured.');
@@ -138,14 +139,7 @@ export default function ActionsScreen() {
         setMessage('Enter a valid phone number and a message of 1–1600 characters.');
         return;
       }
-      Alert.alert('Review SMS details',
-        `Recipient: ${recipient}
-
-Message:
-${messageText}
-
-Neha will open your phone’s SMS app. You must review and press Send there.`,
-        [{ text: 'Cancel', style: 'cancel' }, { text: 'Continue to SMS app', onPress: () => { void approveAndRun(action, { recipient, message: messageText }); } }]);
+      setSmsReview({ action, recipient, message: messageText });
       return;
     }
     Alert.alert('Confirm device action',
@@ -198,6 +192,36 @@ Neha will open your phone’s SMS app. You must review and press Send there.`,
                 <Text style={{ color: '#06111C', fontWeight: '900' }}>UNLOCK</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={() => setLoginVisible(false)} style={{ padding: 12, alignItems: 'center' }}><Text style={{ color: '#A9DFFF' }}>CANCEL</Text></TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+        <Modal visible={smsReview !== null} transparent animationType="fade" onRequestClose={() => setSmsReview(null)}>
+          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.88)', justifyContent: 'center', padding: 20 }}>
+            <View style={{ maxHeight: '82%', backgroundColor: '#101D2A', borderColor: '#5CBFFF', borderWidth: 1, borderRadius: 18, padding: 18 }}>
+              <Text style={{ color: '#8DDAFF', fontSize: 11, fontWeight: '900', letterSpacing: 1 }}>FINAL SMS APPROVAL</Text>
+              <Text style={{ color: '#F1F7FF', fontSize: 18, fontWeight: '800', marginTop: 8 }}>Review before opening Messages</Text>
+              <Text style={{ color: '#A9DFFF', fontSize: 10, fontWeight: '800', marginTop: 18 }}>RECIPIENT</Text>
+              <Text selectable style={{ color: '#FFFFFF', fontSize: 15, marginTop: 5 }}>{smsReview?.recipient}</Text>
+              <Text style={{ color: '#A9DFFF', fontSize: 10, fontWeight: '800', marginTop: 16 }}>EXACT MESSAGE</Text>
+              <ScrollView style={{ marginTop: 6, backgroundColor: '#07101A', borderRadius: 10, padding: 12 }}>
+                <Text selectable style={{ color: '#FFFFFF', fontSize: 14, lineHeight: 21 }}>{smsReview?.message}</Text>
+              </ScrollView>
+              <Text style={{ color: '#FFD18A', fontSize: 11, lineHeight: 17, marginTop: 14 }}>Neha will open your SMS app with these details. You must review them again and press Send there. Nothing is sent automatically.</Text>
+              <TouchableOpacity
+                disabled={busy || !smsReview}
+                onPress={() => {
+                  if (!smsReview) return;
+                  const approvedSms = smsReview;
+                  setSmsReview(null);
+                  void approveAndRun(approvedSms.action, { recipient: approvedSms.recipient, message: approvedSms.message });
+                }}
+                style={{ backgroundColor: '#8DDCFF', padding: 13, borderRadius: 10, alignItems: 'center', marginTop: 16, opacity: busy ? 0.5 : 1 }}
+              >
+                <Text style={{ color: '#06111C', fontWeight: '900' }}>APPROVE & OPEN SMS APP</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setSmsReview(null)} style={{ padding: 12, alignItems: 'center' }}>
+                <Text style={{ color: '#A9DFFF', fontWeight: '800' }}>CANCEL</Text>
+              </TouchableOpacity>
             </View>
           </View>
         </Modal>
