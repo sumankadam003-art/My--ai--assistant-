@@ -52,14 +52,14 @@ class AuthorizedActionService:
         message = arguments.get("message")
         if not isinstance(recipient, str):
             raise ValueError("SMS recipient must be a phone number.")
-        normalized = re.sub(r"[\\s()\\-]", "", recipient)
-        if not re.fullmatch(r"\\+?[1-9][0-9]{6,14}", normalized):
+        normalized = re.sub(r"[\s()\-]", "", recipient)
+        if not re.fullmatch(r"\+?[1-9][0-9]{6,14}", normalized):
             raise ValueError("SMS recipient must contain 7–15 digits, with an optional leading +.")
         if not isinstance(message, str) or not message.strip():
             raise ValueError("SMS message cannot be empty.")
         if len(message) > 1600:
             raise ValueError("SMS message cannot exceed 1600 characters.")
-        if any(ord(char) < 32 and char not in "\\n\\t" for char in message):
+        if any(ord(char) < 32 and char not in "\n\t" for char in message):
             raise ValueError("SMS message contains unsupported control characters.")
         return {"recipient": normalized, "message": message}
 
