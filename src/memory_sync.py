@@ -148,9 +148,9 @@ def save_memory_safely(memory, user_id=None, access_token=None):
     return "queued" if queue_memory(memory) else "local_only"
 
 
-def sync_pending_memories(user_id, access_token):
-    """Upload queued memories; keep local copies after syncing."""
-    if not user_id or not access_token:
+def sync_pending_memories(user_id, access_token=None):
+    """Upload queued memories using the trusted backend's configured identity."""
+    if not user_id:
         return 0
 
     from cloud_memory import save_cloud_memory
@@ -162,24 +162,29 @@ def sync_pending_memories(user_id, access_token):
 
     for item in pending:
         memory = item["memory"]
+        category = item.get("category", "general")
+        if not isinstance(category, str) or not category.strip() or len(category) > 100:
+            category = "general"
 
         try:
             success = save_cloud_memory(
                 user_id,
                 memory,
-                category=item.get("category", "general"),
+                category=category,
             )
         except Exception:
             success = False
 
+        # Keep the queued item unless the cloud save and local removal both succeed.
         if success and remove_pending(memory):
             synced += 1
 
     return synced
 
-def sync_all_local_memories(user_id, access_token):
+
+def sync_all_local_memories(user_id, access_token=None):
     """Upload missing local memories after successfully reading cloud memories."""
-    if not user_id or not access_token:
+    if not user_id:
         return 0
 
     try:
@@ -200,7 +205,9 @@ def sync_all_local_memories(user_id, access_token):
         return 0
 
     try:
-        cloud_records = load_cloud_memories(user_id, access_token)
+        # cloud_memory uses the trusted backend service-role configuration;
+        # the optional legacy access_token is not a limit or a credential here.
+        cloud_records = load_cloud_memories(user_id)
     except Exception as error:
         print(f"Neha: Cloud memory read failed; sync skipped ({type(error).__name__}).")
         return 0
@@ -235,4 +242,3 @@ def sync_all_local_memories(user_id, access_token):
             synced += 1
 
     return synced
-
