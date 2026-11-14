@@ -1,0 +1,96 @@
+name: Neha CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: neha-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-tests:
+    name: Backend tests (Python 3.13)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install backend runtime dependencies
+        run: python -m pip install httpx python-dotenv
+
+      - name: Check Python syntax
+        run: python -m compileall -q src
+
+      - name: Run automated regression tests
+        env:
+          PYTHONPATH: src
+        run: |
+          python - <<'PY'
+          import glob
+          import unittest
+
+          excluded = {"test_cloud_memory.py"}
+          loader = unittest.TestLoader()
+          modules = [
+              path[:-3]
+              for path in glob.glob("test_*.py")
+              if path[:-3] not in excluded
+          ]
+          suite = unittest.TestSuite(
+              loader.loadTestsFromName(module) for module in modules
+          )
+          result = unittest.TextTestRunner(verbosity=2).run(suite)
+          raise SystemExit(not result.wasSuccessful())
+          PY
+
+  mobile-checks:
+    name: Mobile checks (Expo / TypeScript)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: neha-mobile
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: neha-mobile/package-lock.json
+
+      - name: Install locked mobile dependencies
+        run: npm ci
+
+      - name: Check TypeScript types
+        run: npx tsc --noEmit
+
+  repository-hygiene:
+    name: Repository secret-file guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Ensure local environment files are not tracked
+        shell: bash
+        run: |
+          if git ls-files | grep -E '(^|/)\.env($|\.local$)'; then
+            echo "::error::A local .env or .env.local file is tracked by Git."
+            exit 1
+          fi
+          echo "No tracked .env or .env.local files found."
