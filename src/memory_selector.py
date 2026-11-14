@@ -1,6 +1,16 @@
 import re
 from memory import load_memories
 
+_STOP_WORDS = {
+    "a", "an", "and", "are", "as", "at", "be", "been", "but", "by",
+    "can", "could", "did", "do", "does", "for", "from", "had", "has",
+    "have", "he", "her", "here", "him", "his", "how", "i", "if", "in",
+    "is", "it", "its", "me", "my", "of", "on", "or", "our", "she",
+    "that", "the", "their", "them", "there", "they", "this", "to",
+    "us", "was", "we", "were", "what", "when", "where", "which",
+    "who", "why", "will", "with", "would", "you", "your",
+}
+
 
 def select_relevant_memories(prompt, limit=5):
     if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
@@ -12,7 +22,8 @@ def select_relevant_memories(prompt, limit=5):
         return []
 
     def words(text):
-        return set(re.findall(r"\b[a-zA-Z0-9]+\b", text.lower()))
+        tokens = set(re.findall(r"\b[a-zA-Z0-9]+\b", text.lower()))
+        return tokens - _STOP_WORDS
 
     query_words = words(prompt)
 
