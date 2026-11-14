@@ -122,7 +122,7 @@ class ActionPluginManager:
         try:
             result = action.handler()
             return {
-                "ok": None,
+                "ok": True,
                 "status": "returned",
                 "message": str(result),
             }
