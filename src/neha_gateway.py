@@ -3,7 +3,7 @@ import logging
 
 from groq_brain import ask_groq
 from gemini_brain import ask_gemini
-from memory_selector import select_relevant_memories
+from memory_selector import select_relevant_memories, _STOP_WORDS
 from cloud_memory import load_cloud_memories
 
 logger = logging.getLogger(__name__)
@@ -20,7 +20,10 @@ class NehaGateway:
 
     @staticmethod
     def _words(text):
-        return set(re.findall(r"\b[a-zA-Z0-9]+\b", text.lower()))
+        # Use the same stopword policy as local memory selection so common
+        # language words cannot dominate cloud-memory relevance scoring.
+        tokens = set(re.findall(r"\\b[a-zA-Z0-9]+\\b", text.lower()))
+        return tokens - _STOP_WORDS
 
     def _get_memories(self, prompt, user_id=None):
         try:
@@ -49,8 +52,10 @@ class NehaGateway:
             if records is None:
                 return memories
             query_words = self._words(prompt)
-            scored = []
+            if not query_words:
+                return memories[:10]
 
+            scored = []
             for record in records:
                 if not isinstance(record, dict):
                     continue
@@ -59,10 +64,10 @@ class NehaGateway:
                 if not isinstance(fact, str) or not fact.strip():
                     continue
 
-                overlap = query_words & self._words(fact)
-
+                fact_words = self._words(fact)
+                overlap = query_words & fact_words
                 if overlap:
-                    score = len(overlap) / max(1, len(query_words))
+                    score = len(overlap) / len(query_words)
                     scored.append((score, fact.strip()))
 
             scored.sort(key=lambda item: item[0], reverse=True)
@@ -108,21 +113,21 @@ class NehaGateway:
         )
 
         context = (
-            "\nNEHA'S RESPONSE RULES:\n"
-            "- Never invent personal memories, places, events, or conversations.\n"
-            "- Never present guesses as facts or saved memories.\n"
-            "- If you do not know a detail, say so honestly.\n"
-            "- Be warm, respectful, friendly, and concise.\n"
+            "\\nNEHA'S RESPONSE RULES:\\n"
+            "- Never invent personal memories, places, events, or conversations.\\n"
+            "- Never present guesses as facts or saved memories.\\n"
+            "- If you do not know a detail, say so honestly.\\n"
+            "- Be warm, respectful, friendly, and concise.\\n"
         )
 
         if memories:
             context += (
-                "\nRELEVANT SAVED MEMORIES:\n"
-                + "\n".join(f"- {fact}" for fact in memories)
-                + "\nUse these only when relevant.\n"
+                "\\nRELEVANT SAVED MEMORIES:\\n"
+                + "\\n".join(f"- {fact}" for fact in memories)
+                + "\\nUse these only when relevant.\\n"
             )
 
-        shared_prompt = context + "\nUser message:\n" + prompt
+        shared_prompt = context + "\\nUser message:\\n" + prompt
 
         for name, provider in self.providers:
             try:
