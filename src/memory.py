@@ -8,6 +8,10 @@ from pathlib import Path
 
 MEMORY_FILE = Path(__file__).resolve().parent.parent / "data" / "memory.json"
 
+class MemoryStoreError(OSError):
+    """Raised when the local memory file exists but cannot be read safely."""
+
+
 _THREAD_LOCK = threading.RLock()
 
 
@@ -72,7 +76,12 @@ def _write_memories(memories):
 
 def load_memories():
     result = _read_memories()
-    return result if result is not None else []
+    if result is None:
+        raise MemoryStoreError(
+            f"Memory file is unreadable or invalid: {MEMORY_FILE}. "
+            "It was not treated as an empty memory store."
+        )
+    return result
 
 
 def save_memory(fact):
