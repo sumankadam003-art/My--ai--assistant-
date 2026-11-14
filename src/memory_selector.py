@@ -2,7 +2,7 @@ import re
 from memory import load_memories
 
 _STOP_WORDS = {
-    "a", "an", "and", "are", "as", "at", "be", "been", "but", "by",
+    "a", "about", "am", "an", "and", "are", "as", "at", "be", "been", "but", "by",
     "can", "could", "did", "do", "does", "for", "from", "had", "has",
     "have", "he", "her", "here", "him", "his", "how", "i", "if", "in",
     "is", "it", "its", "me", "my", "of", "on", "or", "our", "she",
