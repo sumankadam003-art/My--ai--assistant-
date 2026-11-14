@@ -42,8 +42,8 @@ class ActionEngineBridge:
                     "Plugin metadata changed during bridge registration: " + name
                 )
 
-            def invoke(plugin=plugin):
-                return plugin.handler()
+            def invoke(plugin=plugin, **arguments):
+                return plugin.handler(**arguments)
 
             self.engine.register(
                 name=name,
