@@ -32,10 +32,18 @@ _SECRET_PATTERNS = [
         r"\b(?:password|passcode|pin)\s+(?:is|:|=)\s*\S+",
         re.IGNORECASE,
     ),
+    # Exclude health information broadly, including symptoms, allergies,
+    # diagnoses, treatment, disability, pregnancy, and medication details.
     re.compile(
-        r"\b(?:cancer|diabetes|HIV|AIDS|depression|bipolar|"
+        r"\b(?:allerg(?:y|ies|ic)|anaphylaxis|asthma|arthritis|autism|"
+        r"cancer|chemotherapy|diabetes|HIV|AIDS|depression|bipolar|"
         r"schizophrenia|epilepsy|kidney disease|heart disease|"
-        r"medical diagnosis|medication|taking chemotherapy)\b",
+        r"blood pressure|hypertension|cholesterol|thyroid|migraine|"
+        r"seizure|infection|disorder|diagnos(?:is|ed)|symptom(?:s)?|"
+        r"medication|medicine|prescription|taking\s+(?:ยา|medicine|medication|"
+        r"tablets?|pills?)|treatment|surgery|disabilit(?:y|ies)|"
+        r"pregnan(?:t|cy)|miscarriage|mental health|medical condition|"
+        r"medical history|doctor said|hospitalized|hospitalised)\b",
         re.IGNORECASE,
     ),
     re.compile(
