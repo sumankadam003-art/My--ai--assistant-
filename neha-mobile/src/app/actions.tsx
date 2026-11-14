@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Modal, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Modal, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import API_URL from '../apiConfig';
 import { getAccessToken, getChallenge, login, logout } from '../auth';
 
@@ -66,6 +66,25 @@ export default function ActionsScreen() {
       });
       const result = await executionResponse.json();
       if (!executionResponse.ok) throw new Error(result.error || 'Action request failed.');
+      const approvedUrls: Record<string, string> = {
+        'open youtube': 'https://www.youtube.com',
+        'open google': 'https://www.google.com',
+        'open gmail': 'https://mail.google.com',
+        'open maps': 'https://maps.google.com',
+        'open instagram': 'https://www.instagram.com',
+      };
+
+      const expectedUrl = approvedUrls[action.name];
+      if (
+        result.status === 'executed_unverified' &&
+        expectedUrl &&
+        result.launch_url === expectedUrl
+      ) {
+        await Linking.openURL(expectedUrl);
+        setMessage(`${action.description}: Opened ${expectedUrl}`);
+        return;
+      }
+
       const detail = result.status === 'executed_unverified'
         ? `${result.message} The handler returned; the physical result was not independently verified.`
         : result.message || result.status || 'No result was returned.';

@@ -7,6 +7,15 @@ except ImportError:
     from plugin_manager import ActionPluginManager
 
 
+MOBILE_ACTION_URLS = {
+    "open youtube": "https://www.youtube.com",
+    "open google": "https://www.google.com",
+    "open gmail": "https://mail.google.com",
+    "open maps": "https://maps.google.com",
+    "open instagram": "https://www.instagram.com",
+}
+
+
 BUILTIN_ACTIONS = {
     "battery": ("battery", "device.battery"),
     "volume up": ("volume up", "device.volume"),
@@ -23,14 +32,22 @@ BUILTIN_ACTIONS = {
 }
 
 
-def build_default_action_manager():
-    """Build the fixed built-in action registry; no action runs during setup."""
+def build_default_action_manager(*, mobile_url_launch=False):
+    """Build trusted actions for Termux or the authenticated mobile API."""
+    if not isinstance(mobile_url_launch, bool):
+        raise TypeError("mobile_url_launch must be a boolean.")
+
     manager = ActionPluginManager()
     for name, (command, permission) in BUILTIN_ACTIONS.items():
+        if mobile_url_launch and name in MOBILE_ACTION_URLS:
+            handler = lambda: "Mobile launch authorized."
+        else:
+            handler = lambda command=command: run_action(command)
+
         manager.register(
             name=name,
             description=name.replace("_", " "),
-            handler=lambda command=command: run_action(command),
+            handler=handler,
             permission=permission,
             requires_approval=True,
             category="device" if permission.startswith("device.") else "apps",

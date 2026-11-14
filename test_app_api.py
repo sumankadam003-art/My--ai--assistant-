@@ -12,6 +12,7 @@ import app_api
 class FakeActionService:
     def __init__(self):
         self.executed = []
+        self.fail_actions = set()
 
     def list_actions(self, identity=None):
         return [{"name": "safe test", "description": "A safe test action", "enabled": True}]
@@ -20,10 +21,23 @@ class FakeActionService:
         return {"success": True, "approval_token": "single-use-token"}
 
     def execute(self, identity, action, arguments, approval_token):
-        if approval_token != "single-use-token" or action != "safe test":
+        if approval_token != "single-use-token":
             return {"success": False, "status": "approval_invalid"}
         self.executed.append(action)
-        return {"success": True, "status": "executed_unverified", "message": "Test action ran"}
+        if action in self.fail_actions:
+            return {"success": False, "status": "execution_failed", "action": action}
+        if action == "safe test" or action in app_api.MOBILE_ACTION_URLS:
+            return {
+                "success": True,
+                "status": "executed_unverified",
+                "action": action,
+                "message": "Test action ran",
+            }
+        return {
+            "success": False,
+            "status": "action_unavailable",
+            "action": action,
+        }
 
 
 class ActionAPIIntegrationTests(unittest.TestCase):
@@ -90,6 +104,43 @@ class ActionAPIIntegrationTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(result["status"], "executed_unverified")
         self.assertEqual(self.service.executed, ["safe test"])
+
+    def execute_with_approval(self, action):
+        status, approval = self.request("POST", "/actions/approve", {
+            "action": action, "arguments": {}, "owner_confirmed": True
+        }, token="valid")
+        self.assertEqual(status, 200)
+        return self.request("POST", "/actions/execute", {
+            "action": action, "arguments": {},
+            "approval_token": approval["approval_token"]
+        }, token="valid")
+
+    def test_approved_url_actions_return_fixed_launch_urls(self):
+        for action, expected_url in app_api.MOBILE_ACTION_URLS.items():
+            with self.subTest(action=action):
+                status, result = self.execute_with_approval(action)
+                self.assertEqual(status, 200)
+                self.assertEqual(result["status"], "executed_unverified")
+                self.assertEqual(result["launch_url"], expected_url)
+
+    def test_ordinary_action_does_not_return_launch_url(self):
+        status, result = self.execute_with_approval("safe test")
+        self.assertEqual(status, 200)
+        self.assertEqual(result["status"], "executed_unverified")
+        self.assertNotIn("launch_url", result)
+
+    def test_failed_url_action_does_not_return_launch_url(self):
+        self.service.fail_actions.add("open youtube")
+        status, result = self.execute_with_approval("open youtube")
+        self.assertEqual(status, 200)
+        self.assertEqual(result["status"], "execution_failed")
+        self.assertNotIn("launch_url", result)
+
+    def test_invalid_action_does_not_return_launch_url(self):
+        status, result = self.execute_with_approval("open nonexistent")
+        self.assertEqual(status, 200)
+        self.assertEqual(result["status"], "action_unavailable")
+        self.assertNotIn("launch_url", result)
 
     def test_challenge_login_routes_are_available(self):
         status, challenge = self.request("POST", "/auth/challenge", {})

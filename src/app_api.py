@@ -9,7 +9,7 @@ try:
     from .cloud_memory import (
         NEHA_CLOUD_OWNER_ID, save_cloud_memory, load_cloud_memories,
     )
-    from .action_registry import build_default_action_manager
+    from .action_registry import build_default_action_manager, MOBILE_ACTION_URLS
     from .action_service_factory import build_authorized_action_service, ActionServiceConfigurationError
     from .authorized_action_service import AuthorizationError
     from .local_owner_auth import LocalOwnerAuth, OwnerAccountError
@@ -18,7 +18,7 @@ except ImportError:
     from cloud_memory import (
         NEHA_CLOUD_OWNER_ID, save_cloud_memory, load_cloud_memories,
     )
-    from action_registry import build_default_action_manager
+    from action_registry import build_default_action_manager, MOBILE_ACTION_URLS
     from action_service_factory import build_authorized_action_service, ActionServiceConfigurationError
     from authorized_action_service import AuthorizationError
     from local_owner_auth import LocalOwnerAuth, OwnerAccountError
@@ -39,7 +39,7 @@ def get_action_service():
     with _action_service_lock:
         if _action_service is None:
             _action_service = build_authorized_action_service(
-                build_default_action_manager(), owner_auth=owner_auth
+                build_default_action_manager(mobile_url_launch=True), owner_auth=owner_auth
             )
     return _action_service
 
@@ -179,6 +179,12 @@ class NehaAPIHandler(BaseHTTPRequestHandler):
                     self.send_json(200, service.request_approval(token, action, arguments))
                     return
                 result = service.execute(token, action, arguments, payload.get("approval_token"))
+                if (
+                    isinstance(result, dict)
+                    and result.get("status") == "executed_unverified"
+                    and result.get("action") in MOBILE_ACTION_URLS
+                ):
+                    result["launch_url"] = MOBILE_ACTION_URLS[result["action"]]
                 self.send_json(200, result)
             except AuthorizationError:
                 self.send_json(401, {"success": False, "error": "Login required"})
