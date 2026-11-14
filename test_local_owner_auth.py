@@ -182,5 +182,36 @@ class LocalOwnerAuthTests(unittest.TestCase):
             self.auth.reset_password_with_recovery(secret, "short")
 
 
+    def test_challenge_creation_is_rate_limited_across_auth_instances(self):
+        import os
+        from unittest.mock import patch
+        self.auth.setup("govind-owner", "correct horse battery staple")
+        other = LocalOwnerAuth(Path(self.temp.name) / "other-owner.json")
+        with patch.dict(os.environ, {"NEHA_LOGIN_OFFSET": "2003"}):
+            with patch("src.local_owner_auth._CHALLENGE_CREATION_TIMES", []):
+                for _ in range(self.auth.MAX_CHALLENGES_PER_WINDOW):
+                    self.auth.create_challenge()
+                with self.assertRaises(OwnerAccountError):
+                    other.create_challenge()
+
+    def test_stale_record_temp_file_does_not_block_writes(self):
+        self.path.with_name(self.path.name + ".tmp").write_text("stale")
+        self.auth.setup("govind-owner", "correct horse battery staple")
+        self.assertTrue(self.path.is_file())
+        self.assertNotEqual(self.path.read_text(), "stale")
+
+    def test_failed_session_revocation_does_not_change_password(self):
+        from unittest.mock import patch
+        self.auth.setup("govind-owner", "correct horse battery staple")
+        token = self.auth.login("govind-owner", "correct horse battery staple")["access_token"]
+        secret = self.auth.begin_recovery_enrollment(token)
+        self.auth.activate_recovery_enrollment(token, secret)
+        with patch.object(self.auth, "_write_sessions", side_effect=OSError("disk failure")):
+            with self.assertRaises(OSError):
+                self.auth.reset_password_with_recovery(secret, "a-new-strong-password")
+        self.assertTrue(self.auth.verify_session(token))
+        self.assertIsNotNone(self.auth.login("govind-owner", "correct horse battery staple"))
+        self.assertIsNone(self.auth.login("govind-owner", "a-new-strong-password"))
+
 if __name__ == "__main__":
     unittest.main()
