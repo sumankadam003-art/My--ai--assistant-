@@ -4,6 +4,7 @@ import hmac
 import json
 import os
 import secrets
+import tempfile
 import threading
 import time
 import uuid
@@ -14,8 +15,14 @@ class OwnerAccountError(ValueError):
     pass
 
 
+_CHALLENGE_CREATION_LOCK = threading.Lock()
+_CHALLENGE_CREATION_TIMES = []
+
+
 class LocalOwnerAuth:
     ITERATIONS = 310_000
+    CHALLENGE_WINDOW_SECONDS = 60
+    MAX_CHALLENGES_PER_WINDOW = 5
     RECOVERY_TTL_SECONDS = 300
 
     def __init__(self, path="data/owner_auth.json", session_ttl_seconds=3600):
@@ -56,24 +63,35 @@ class LocalOwnerAuth:
 
     def _write_record(self, record):
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        temp = self.path.with_name(self.path.name + ".tmp")
-        fd = os.open(str(temp), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        temp_path = None
         try:
-            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            # A unique same-directory temporary file avoids stale-file collisions
+            # and preserves atomic replacement on the target filesystem.
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=self.path.parent,
+                prefix=self.path.name + ".",
+                suffix=".tmp",
+                delete=False,
+            ) as handle:
+                temp_path = Path(handle.name)
+                os.chmod(temp_path, 0o600)
                 json.dump(record, handle)
                 handle.flush()
                 os.fsync(handle.fileno())
-            os.replace(temp, self.path)
+            os.replace(temp_path, self.path)
+            temp_path = None
             try:
                 os.chmod(self.path, 0o600)
             except OSError:
                 pass
-        except Exception:
-            try:
-                temp.unlink(missing_ok=True)
-            except OSError:
-                pass
-            raise
+        finally:
+            if temp_path is not None:
+                try:
+                    temp_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
 
     def setup(self, username, password):
         username = self._validate_username(username)
@@ -162,9 +180,21 @@ class LocalOwnerAuth:
     def create_challenge(self):
         if not self.is_configured():
             raise OwnerAccountError("Owner account is not configured.")
+        now = time.monotonic()
+        # Process-wide throttle: creating fresh challenge IDs must not reset the
+        # five-answer limit. This is intentionally shared across auth instances.
+        with _CHALLENGE_CREATION_LOCK:
+            while (
+                _CHALLENGE_CREATION_TIMES
+                and now - _CHALLENGE_CREATION_TIMES[0] >= self.CHALLENGE_WINDOW_SECONDS
+            ):
+                _CHALLENGE_CREATION_TIMES.pop(0)
+            if len(_CHALLENGE_CREATION_TIMES) >= self.MAX_CHALLENGES_PER_WINDOW:
+                raise OwnerAccountError("Too many login challenges. Try again in a minute.")
+            _CHALLENGE_CREATION_TIMES.append(now)
+
         challenge_id = secrets.token_urlsafe(18)
         number = secrets.randbelow(9000) + 1000
-        now = time.monotonic()
         with self._lock:
             self._challenges[challenge_id] = {
                 "number": number, "expires": now + 120, "attempts": 0
@@ -277,8 +307,11 @@ class LocalOwnerAuth:
             # app confirms that Android SecureStore saved this replacement.
             replacement_secret = secrets.token_urlsafe(32)
             record["pending_recovery_secret_hash"] = self._recovery_digest(replacement_secret)
-            self._write_record(record)
+            # Revoke sessions first. If revocation fails, the password record
+            # remains untouched; if the later record write fails, users are only
+            # logged out, never left with a changed password and live old sessions.
             self._write_sessions({})
+            self._write_record(record)
             self._pending_recovery.clear()
         return replacement_secret
 
