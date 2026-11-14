@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Modal, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import API_URL from '../apiConfig';
+import * as SMS from 'expo-sms';
 import { getAccessToken, getChallenge, login, logout } from '../auth';
 
 type ActionItem = { name: string; description: string; risk: string; required_permissions: string[]; requires_approval: boolean; enabled: boolean };
@@ -77,6 +78,24 @@ export default function ActionsScreen() {
       };
 
       const expectedUrl = approvedUrls[action.name];
+      if (
+        result.status === 'executed_unverified' &&
+        action.name === 'send_sms' &&
+        result.sms_payload &&
+        result.sms_payload.recipient === actionArguments.recipient &&
+        result.sms_payload.message === actionArguments.message
+      ) {
+        const available = await SMS.isAvailableAsync();
+        if (!available) throw new Error('No SMS app is available on this device.');
+        const smsResult = await SMS.sendSMSAsync(
+          [result.sms_payload.recipient],
+          result.sms_payload.message,
+        );
+        setMessage(smsResult.result === 'cancelled'
+          ? 'SMS composer was cancelled. No message was sent from this flow.'
+          : 'SMS composer opened. Review the recipient and message, then press Send. Android does not report delivery status to Neha.');
+        return;
+      }
       if (
         result.status === 'executed_unverified' &&
         expectedUrl &&
