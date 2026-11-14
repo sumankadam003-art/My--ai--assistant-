@@ -4,6 +4,7 @@ The API/UI must display action details and obtain explicit owner consent before
 request_approval is called. Model output is never an approval signal.
 """
 from typing import Mapping
+import re
 try:
     from .action_authorization import ApprovalStore, AuthorizationError, OwnerAuthorizer
 except ImportError:
@@ -35,15 +36,39 @@ class AuthorizedActionService:
                 return item
         raise ValueError("This action is not registered.")
 
+    @staticmethod
+    def _validate_arguments(action, arguments):
+        """Validate the only currently supported parameterized action."""
+        if not isinstance(arguments, Mapping):
+            raise ValueError("Action arguments must be an object.")
+        if action != "send_sms":
+            if arguments:
+                raise ValueError("This action does not accept arguments.")
+            return {}
+
+        if set(arguments) != {"recipient", "message"}:
+            raise ValueError("SMS requires exactly recipient and message.")
+        recipient = arguments.get("recipient")
+        message = arguments.get("message")
+        if not isinstance(recipient, str):
+            raise ValueError("SMS recipient must be a phone number.")
+        normalized = re.sub(r"[\\s()\\-]", "", recipient)
+        if not re.fullmatch(r"\\+?[1-9][0-9]{6,14}", normalized):
+            raise ValueError("SMS recipient must contain 7–15 digits, with an optional leading +.")
+        if not isinstance(message, str) or not message.strip():
+            raise ValueError("SMS message cannot be empty.")
+        if len(message) > 1600:
+            raise ValueError("SMS message cannot exceed 1600 characters.")
+        if any(ord(char) < 32 and char not in "\\n\\t" for char in message):
+            raise ValueError("SMS message contains unsupported control characters.")
+        return {"recipient": normalized, "message": message}
+
     def request_approval(self, access_token, action, arguments=None):
         owner = self._owner_authorizer.authenticate_owner(access_token)
         item = self._find_action(action)
         if arguments is None:
             arguments = {}
-        if not isinstance(arguments, Mapping):
-            raise ValueError("Action arguments must be an object.")
-        if arguments:
-            raise ValueError("Existing plugin actions do not accept arguments yet.")
+        arguments = self._validate_arguments(item["name"], arguments)
         token = self._approval_store.issue(item["name"], arguments, owner["id"])
         return {"success": True, "approval_token": token,
                 "expires_in_seconds": self._approval_store.ttl_seconds,
@@ -53,9 +78,10 @@ class AuthorizedActionService:
         owner = self._owner_authorizer.authenticate_owner(access_token)
         if arguments is None:
             arguments = {}
-        if not isinstance(arguments, Mapping) or arguments:
-            return {"success": False, "status": "invalid_arguments",
-                    "message": "Existing plugin actions currently accept no arguments."}
+        try:
+            arguments = self._validate_arguments(action, arguments)
+        except ValueError as exc:
+            return {"success": False, "status": "invalid_arguments", "message": str(exc)}
         if not isinstance(approval_token, str) or not approval_token:
             return {"success": False, "status": "approval_required",
                     "message": "A valid owner approval is required."}
@@ -66,5 +92,7 @@ class AuthorizedActionService:
         if not self._approval_store.consume(approval_token, item["name"], arguments, owner["id"]):
             return {"success": False, "status": "approval_invalid",
                     "message": "Approval is invalid, expired, or already used."}
-        result = self._bridge.execute(item["name"], actor=owner["id"], approved=True)
+        result = self._bridge.execute(
+            item["name"], arguments=arguments, actor=owner["id"], approved=True
+        )
         return result.to_dict() if hasattr(result, "to_dict") else result
