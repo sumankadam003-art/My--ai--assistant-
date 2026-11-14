@@ -82,7 +82,7 @@ export default function ActionsScreen() {
         result.status === 'executed_unverified' &&
         action.name === 'send_sms' &&
         result.sms_payload &&
-        result.sms_payload.recipient === actionArguments.recipient &&
+        result.sms_payload.recipient === actionArguments.recipient.replaceAll(' ', '').replaceAll('-', '').replaceAll('(', '').replaceAll(')', '') &&
         result.sms_payload.message === actionArguments.message
       ) {
         const available = await SMS.isAvailableAsync();
