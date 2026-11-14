@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Modal, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import API_URL from '../apiConfig';
+import * as SMS from 'expo-sms';
 import { getAccessToken, getChallenge, login, logout } from '../auth';
 
 type ActionItem = { name: string; description: string; risk: string; required_permissions: string[]; requires_approval: boolean; enabled: boolean };
@@ -14,6 +15,9 @@ export default function ActionsScreen() {
   const [challengeNumber, setChallengeNumber] = useState('');
   const [answer, setAnswer] = useState('');
   const [loginError, setLoginError] = useState('');
+  const [smsRecipient, setSmsRecipient] = useState('');
+  const [smsMessage, setSmsMessage] = useState('');
+  const [smsReview, setSmsReview] = useState<{ action: ActionItem; recipient: string; message: string } | null>(null);
 
   const loadActions = useCallback(async () => {
     if (!API_URL) throw new Error('API address is not configured.');
@@ -48,7 +52,7 @@ export default function ActionsScreen() {
     return () => { active = false; };
   }, [loadActions]);
 
-  async function approveAndRun(action: ActionItem) {
+  async function approveAndRun(action: ActionItem, actionArguments: Record<string, string> = {}) {
     if (!API_URL) return;
     setBusy(true);
     try {
@@ -56,13 +60,13 @@ export default function ActionsScreen() {
       if (!token) throw new Error('Login required. Refresh and sign in.');
       const approvalResponse = await fetch(`${API_URL}/actions/approve`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ action: action.name, arguments: {}, owner_confirmed: true }),
+        body: JSON.stringify({ action: action.name, arguments: actionArguments, owner_confirmed: true }),
       });
       const approval = await approvalResponse.json();
       if (!approvalResponse.ok || !approval.success || !approval.approval_token) throw new Error(approval.error || 'Approval could not be issued.');
       const executionResponse = await fetch(`${API_URL}/actions/execute`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ action: action.name, arguments: {}, approval_token: approval.approval_token }),
+        body: JSON.stringify({ action: action.name, arguments: actionArguments, approval_token: approval.approval_token }),
       });
       const result = await executionResponse.json();
       if (!executionResponse.ok) throw new Error(result.error || 'Action request failed.');
@@ -75,6 +79,24 @@ export default function ActionsScreen() {
       };
 
       const expectedUrl = approvedUrls[action.name];
+      if (
+        result.status === 'executed_unverified' &&
+        action.name === 'send_sms' &&
+        result.sms_payload &&
+        result.sms_payload.recipient === actionArguments.recipient.replaceAll(' ', '').replaceAll('-', '').replaceAll('(', '').replaceAll(')', '') &&
+        result.sms_payload.message === actionArguments.message
+      ) {
+        const available = await SMS.isAvailableAsync();
+        if (!available) throw new Error('No SMS app is available on this device.');
+        const smsResult = await SMS.sendSMSAsync(
+          [result.sms_payload.recipient],
+          result.sms_payload.message,
+        );
+        setMessage(smsResult.result === 'cancelled'
+          ? 'SMS composer was cancelled. No message was sent from this flow.'
+          : 'SMS composer opened. Review the recipient and message, then press Send. Android does not report delivery status to Neha.');
+        return;
+      }
       if (
         result.status === 'executed_unverified' &&
         expectedUrl &&
@@ -106,6 +128,20 @@ export default function ActionsScreen() {
   }
 
   function confirmAction(action: ActionItem) {
+    if (action.name === 'send_sms') {
+      const recipient = smsRecipient.trim();
+      const messageText = smsMessage;
+      const normalizedRecipient = recipient.replaceAll(' ', '').replaceAll('-', '').replaceAll('(', '').replaceAll(')', '');
+      const digits = normalizedRecipient.startsWith('+') ? normalizedRecipient.slice(1) : normalizedRecipient;
+      const phoneValid = /^[1-9][0-9]{6,14}$/.test(digits) &&
+        (normalizedRecipient === digits || normalizedRecipient === `+${digits}`);
+      if (!phoneValid || !messageText.trim() || messageText.length > 1600) {
+        setMessage('Enter a valid phone number and a message of 1–1600 characters.');
+        return;
+      }
+      setSmsReview({ action, recipient, message: messageText });
+      return;
+    }
     Alert.alert('Confirm device action',
       `Neha is requesting permission to: ${action.description}\n\nPermission: ${action.required_permissions.join(', ')}\nRisk: ${action.risk.toUpperCase()}\n\nDo you want to run it now?`,
       [{ text: 'Cancel', style: 'cancel' }, { text: 'Approve & Run', onPress: () => { void approveAndRun(action); } }]);
@@ -127,6 +163,15 @@ export default function ActionsScreen() {
           <View key={action.name} style={s.actionCard}>
             <View style={s.actionHeading}><Text style={s.actionName}>{action.description}</Text><Text style={s.risk}>{action.risk.toUpperCase()}</Text></View>
             <Text style={s.permission}>Permission: {action.required_permissions.join(', ')}</Text>
+            {action.name === 'send_sms' && (
+              <View style={s.smsForm}>
+                <Text style={s.smsLabel}>RECIPIENT PHONE NUMBER</Text>
+                <TextInput value={smsRecipient} onChangeText={setSmsRecipient} keyboardType="phone-pad" autoComplete="tel" placeholder="+91 9876543210" placeholderTextColor="#7799B2" style={s.smsInput} maxLength={20} />
+                <Text style={s.smsLabel}>MESSAGE (MAX 1600 CHARACTERS)</Text>
+                <TextInput value={smsMessage} onChangeText={setSmsMessage} multiline textAlignVertical="top" placeholder="Write your message..." placeholderTextColor="#7799B2" style={[s.smsInput, s.smsMessage]} maxLength={1600} />
+                <Text style={s.smsCount}>{smsMessage.length}/1600</Text>
+              </View>
+            )}
             <TouchableOpacity style={[s.primary, !action.enabled && s.disabled]} disabled={busy || !action.enabled} onPress={() => confirmAction(action)}>
               <Text style={s.primaryText}>{action.enabled ? 'REVIEW & APPROVE' : 'DISABLED'}</Text>
             </TouchableOpacity>
@@ -147,6 +192,36 @@ export default function ActionsScreen() {
                 <Text style={{ color: '#06111C', fontWeight: '900' }}>UNLOCK</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={() => setLoginVisible(false)} style={{ padding: 12, alignItems: 'center' }}><Text style={{ color: '#A9DFFF' }}>CANCEL</Text></TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+        <Modal visible={smsReview !== null} transparent animationType="fade" onRequestClose={() => setSmsReview(null)}>
+          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.88)', justifyContent: 'center', padding: 20 }}>
+            <View style={{ maxHeight: '82%', backgroundColor: '#101D2A', borderColor: '#5CBFFF', borderWidth: 1, borderRadius: 18, padding: 18 }}>
+              <Text style={{ color: '#8DDAFF', fontSize: 11, fontWeight: '900', letterSpacing: 1 }}>FINAL SMS APPROVAL</Text>
+              <Text style={{ color: '#F1F7FF', fontSize: 18, fontWeight: '800', marginTop: 8 }}>Review before opening Messages</Text>
+              <Text style={{ color: '#A9DFFF', fontSize: 10, fontWeight: '800', marginTop: 18 }}>RECIPIENT</Text>
+              <Text selectable style={{ color: '#FFFFFF', fontSize: 15, marginTop: 5 }}>{smsReview?.recipient}</Text>
+              <Text style={{ color: '#A9DFFF', fontSize: 10, fontWeight: '800', marginTop: 16 }}>EXACT MESSAGE</Text>
+              <ScrollView style={{ marginTop: 6, backgroundColor: '#07101A', borderRadius: 10, padding: 12 }}>
+                <Text selectable style={{ color: '#FFFFFF', fontSize: 14, lineHeight: 21 }}>{smsReview?.message}</Text>
+              </ScrollView>
+              <Text style={{ color: '#FFD18A', fontSize: 11, lineHeight: 17, marginTop: 14 }}>Neha will open your SMS app with these details. You must review them again and press Send there. Nothing is sent automatically.</Text>
+              <TouchableOpacity
+                disabled={busy || !smsReview}
+                onPress={() => {
+                  if (!smsReview) return;
+                  const approvedSms = smsReview;
+                  setSmsReview(null);
+                  void approveAndRun(approvedSms.action, { recipient: approvedSms.recipient, message: approvedSms.message });
+                }}
+                style={{ backgroundColor: '#8DDCFF', padding: 13, borderRadius: 10, alignItems: 'center', marginTop: 16, opacity: busy ? 0.5 : 1 }}
+              >
+                <Text style={{ color: '#06111C', fontWeight: '900' }}>APPROVE & OPEN SMS APP</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setSmsReview(null)} style={{ padding: 12, alignItems: 'center' }}>
+                <Text style={{ color: '#A9DFFF', fontWeight: '800' }}>CANCEL</Text>
+              </TouchableOpacity>
             </View>
           </View>
         </Modal>
@@ -172,5 +247,8 @@ const s = StyleSheet.create({
   actionName: { color: '#F1F7FF', fontSize: 14, fontWeight: '800', flex: 1 },
   risk: { color: '#FFD18A', fontSize: 9, fontWeight: '900', marginLeft: 8 },
   permission: { color: '#8FA9BD', fontSize: 10, marginTop: 8 }, disabled: { opacity: 0.45 },
+  smsForm: { marginTop: 14, gap: 8 }, smsLabel: { color: '#8DDAFF', fontSize: 9, fontWeight: '900', letterSpacing: 1 },
+  smsInput: { color: '#FFFFFF', backgroundColor: '#07101A', borderColor: '#38546A', borderWidth: 1, borderRadius: 9, padding: 11, fontSize: 13 },
+  smsMessage: { minHeight: 100, maxHeight: 180 }, smsCount: { color: '#8FA9BD', fontSize: 10, textAlign: 'right' },
   loader: { marginTop: 16 }, footer: { color: '#71899E', fontSize: 10, lineHeight: 16, marginTop: 20 },
 });

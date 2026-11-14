@@ -178,6 +178,10 @@ class NehaAPIHandler(BaseHTTPRequestHandler):
                         return
                     self.send_json(200, service.request_approval(token, action, arguments))
                     return
+                sms_payload = (
+                    service._validate_arguments("send_sms", arguments)
+                    if action == "send_sms" else None
+                )
                 result = service.execute(token, action, arguments, payload.get("approval_token"))
                 if (
                     isinstance(result, dict)
@@ -185,6 +189,13 @@ class NehaAPIHandler(BaseHTTPRequestHandler):
                     and result.get("action") in MOBILE_ACTION_URLS
                 ):
                     result["launch_url"] = MOBILE_ACTION_URLS[result["action"]]
+                if (
+                    isinstance(result, dict)
+                    and result.get("status") == "executed_unverified"
+                    and result.get("action") == "send_sms"
+                    and sms_payload is not None
+                ):
+                    result["sms_payload"] = sms_payload
                 self.send_json(200, result)
             except AuthorizationError:
                 self.send_json(401, {"success": False, "error": "Login required"})

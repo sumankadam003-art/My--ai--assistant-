@@ -42,7 +42,7 @@ def build_default_action_manager(*, mobile_url_launch=False):
     for name, (command, permission) in BUILTIN_ACTIONS.items():
         if name == "send_sms":
             def handler(recipient, message):
-                return "SMS sending is not enabled until the Android native sender is installed."
+                return "Owner-approved SMS details are ready for the Android SMS composer."
         elif mobile_url_launch and name in MOBILE_ACTION_URLS:
             handler = lambda: "Mobile launch authorized."
         else:
@@ -56,8 +56,8 @@ def build_default_action_manager(*, mobile_url_launch=False):
             requires_approval=True,
             category="device" if permission.startswith("device.") else "apps",
         )
-        if name == "send_sms":
-            # Keep the backend contract registered but fail closed until Stage 3
-            # supplies the Android native SMS implementation.
+        if name == "send_sms" and not mobile_url_launch:
+            # Termux has no Android composer. Only the authenticated mobile API
+            # may authorize the handoff to the phone's SMS application.
             manager.disable(name)
     return manager
