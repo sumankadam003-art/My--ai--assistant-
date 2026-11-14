@@ -49,7 +49,7 @@ class TelegramBotTests(unittest.TestCase):
     def test_pending_suggestions_are_capped(self):
         now = time.time()
         pending = {
-            str(index): {"fact": f"fact {index}", "created_at": now + index}
+            str(index): {"fact": f"fact {index}", "created_at": now - index}
             for index in range(telegram_bot.MAX_PENDING_MEMORIES)
         }
 
