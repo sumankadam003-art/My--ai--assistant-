@@ -74,6 +74,13 @@ def _contains_obvious_secret(value):
 
 
 def _is_grounded_suggestion(item, conversation):
+    # Reject suggestions that flip explicit negation in the source conversation.
+    negation_pattern = r"\\b(?:not|never|no|without|cannot|can't|isn't|aren't|don't|doesn't|didn't)\\b"
+    item_negations = set(re.findall(negation_pattern, item.casefold()))
+    conversation_negations = set(re.findall(negation_pattern, conversation.casefold()))
+    if item_negations != conversation_negations:
+        return False
+
     words = set(re.findall(r"\b[a-zA-Z0-9]{3,}\b", item.casefold()))
     words = words - _STOP_WORDS
     if not words:
