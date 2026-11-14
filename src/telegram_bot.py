@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import tempfile
+import time
 import uuid
 from pathlib import Path
 
@@ -22,7 +23,8 @@ from telegram.ext import (
 )
 
 from neha_gateway import NehaGateway
-from memory import save_memory
+from memory_sync import save_memory_safely
+from cloud_memory import NEHA_CLOUD_OWNER_ID
 from memory_brain import suggest_memories
 
 
@@ -33,11 +35,24 @@ gateway = NehaGateway()
 BASE_DIR = Path(__file__).resolve().parent.parent
 CONFIG_FILE = Path.home() / ".config/neha-assistant/.env"
 HISTORY_DIR = BASE_DIR / "data" / "telegram_history"
+PENDING_MEMORY_TTL_SECONDS = 15 * 60
+MAX_PENDING_MEMORIES = 20
 
 
-def load_config():
+def load_config(path=CONFIG_FILE):
+    try:
+        raw_config = path.read_text(encoding="utf-8")
+    except FileNotFoundError as error:
+        raise RuntimeError(
+            f"Telegram configuration file was not found: {path}"
+        ) from error
+    except OSError as error:
+        raise RuntimeError(
+            f"Telegram configuration file cannot be read: {path}"
+        ) from error
+
     config = {}
-    for line in CONFIG_FILE.read_text(encoding="utf-8").splitlines():
+    for line in raw_config.splitlines():
         line = line.strip()
         if line and not line.startswith("#") and "=" in line:
             key, value = line.split("=", 1)
@@ -49,20 +64,71 @@ def load_user_history(user_id):
     path = HISTORY_DIR / f"{user_id}.json"
 
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        raw = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return []
+    except OSError:
+        return None
 
-        if isinstance(data, list):
-            return [
-                item for item in data[-40:]
-                if isinstance(item, dict)
-                and item.get("role") in ("user", "assistant")
-                and isinstance(item.get("content"), str)
-            ]
+    try:
+        data = json.loads(raw)
+    except (ValueError, TypeError):
+        return None
 
-    except (OSError, ValueError, TypeError):
-        pass
+    if not isinstance(data, list):
+        return None
 
-    return []
+    # Refuse to silently discard malformed records: handle_message must not
+    # overwrite the original history until the owner has repaired it.
+    if any(
+        not isinstance(item, dict)
+        or item.get("role") not in ("user", "assistant")
+        or not isinstance(item.get("content"), str)
+        or not item["content"].strip()
+        for item in data
+    ):
+        return None
+
+    return data[-40:]
+
+
+def prune_pending_memories(pending, now=None):
+    """Remove malformed and expired suggestions from Telegram user state."""
+    if not isinstance(pending, dict):
+        return {}
+    current_time = time.time() if now is None else now
+    for memory_id, entry in list(pending.items()):
+        if not isinstance(entry, dict):
+            pending.pop(memory_id, None)
+            continue
+        created_at = entry.get("created_at")
+        if (
+            isinstance(created_at, bool)
+            or not isinstance(created_at, (int, float))
+            or created_at > current_time
+            or current_time - created_at > PENDING_MEMORY_TTL_SECONDS
+            or not isinstance(entry.get("fact"), str)
+            or not entry["fact"].strip()
+        ):
+            pending.pop(memory_id, None)
+    return pending
+
+
+def add_pending_memory(pending, memory_id, fact, now=None):
+    """Add a suggestion while enforcing expiry and a strict per-user cap."""
+    current_time = time.time() if now is None else now
+    pending = prune_pending_memories(pending, current_time)
+    if len(pending) >= MAX_PENDING_MEMORIES:
+        oldest_id = min(
+            pending,
+            key=lambda key: pending[key]["created_at"],
+        )
+        pending.pop(oldest_id, None)
+    pending[memory_id] = {
+        "fact": fact,
+        "created_at": current_time,
+    }
+    return pending
 
 
 def save_user_history(user_id, history):
@@ -184,8 +250,13 @@ async def handle_memory_decision(
         return
 
     action, memory_id = parts
-    pending = context.user_data.get("pending_memories", {})
-    fact = pending.get(memory_id)
+    pending = context.user_data.get("pending_memories")
+    if not isinstance(pending, dict):
+        pending = {}
+    context.user_data["pending_memories"] = prune_pending_memories(pending)
+    pending = context.user_data["pending_memories"]
+    entry = pending.get(memory_id)
+    fact = entry.get("fact") if isinstance(entry, dict) else None
 
     if not fact:
         await query.answer("This suggestion has expired.")
@@ -193,7 +264,11 @@ async def handle_memory_decision(
 
     if action == "mem_save":
         try:
-            saved = save_memory(fact)
+            save_status = save_memory_safely(
+                fact,
+                user_id=NEHA_CLOUD_OWNER_ID or None,
+            )
+            saved = save_status != "failed"
         except Exception as error:
             logger.warning(
                 "Memory save failed (%s).",
@@ -262,9 +337,20 @@ async def handle_message(
 
     async with lock:
         history = load_user_history(user_id)
+        if history is None:
+            await safe_reply(
+                update.message,
+                "Your saved conversation history is unreadable. "
+                "I have preserved the file and will not overwrite it.",
+            )
+            return
 
         try:
-            answer = gateway.ask(prompt, history)
+            answer = gateway.ask(
+                prompt,
+                history,
+                user_id=NEHA_CLOUD_OWNER_ID or None,
+            )
 
             if not isinstance(answer, str) or not answer.strip():
                 raise ValueError("Invalid AI response.")
@@ -325,9 +411,12 @@ async def handle_message(
             fact = fact.strip()
             memory_id = uuid.uuid4().hex[:12]
 
-            context.user_data.setdefault(
-                "pending_memories", {}
-            )[memory_id] = fact
+            pending = context.user_data.get("pending_memories")
+            if not isinstance(pending, dict):
+                pending = {}
+            context.user_data["pending_memories"] = add_pending_memory(
+                pending, memory_id, fact
+            )
 
             keyboard = InlineKeyboardMarkup([
                 [
