@@ -40,7 +40,7 @@ _SECRET_PATTERNS = [
         r"schizophrenia|epilepsy|kidney disease|heart disease|"
         r"blood pressure|hypertension|cholesterol|thyroid|migraine|"
         r"seizure|infection|disorder|diagnos(?:is|ed)|symptom(?:s)?|"
-        r"medication|medicine|prescription|taking\s+(?:ยา|medicine|medication|"
+        r"medication|medicine|prescription|taking\s+(?:medicine|medication|"
         r"tablets?|pills?)|treatment|surgery|disabilit(?:y|ies)|"
         r"pregnan(?:t|cy)|miscarriage|mental health|medical condition|"
         r"medical history|doctor said|hospitalized|hospitalised)\b",
@@ -75,7 +75,7 @@ def _contains_obvious_secret(value):
 
 def _is_grounded_suggestion(item, conversation):
     # Reject suggestions that flip explicit negation in the source conversation.
-    negation_pattern = r"\\b(?:not|never|no|without|cannot|can't|isn't|aren't|don't|doesn't|didn't)\\b"
+    negation_pattern = r"\b(?:not|never|no|without|cannot|can't|isn't|aren't|don't|doesn't|didn't)\b"
     item_negations = set(re.findall(negation_pattern, item.casefold()))
     conversation_negations = set(re.findall(negation_pattern, conversation.casefold()))
     if item_negations != conversation_negations:
