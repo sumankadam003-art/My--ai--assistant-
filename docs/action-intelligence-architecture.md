@@ -1,6 +1,6 @@
 # Neha Action Intelligence — Architecture and Implementation Plan
 
-**Status:** Design baseline; Phase 1 typed capability catalogue implemented and enforced by the authorized action service  
+**Status:** Phase 1 implemented; Phase 2 structured Action AI planner implemented as a separate planning module  
 **Audited branch:** `feature/conversational-action-chat`  
 **Design principle:** One conversational interface, one dedicated action-planning brain, many trusted capabilities.
 
@@ -225,12 +225,17 @@ Do not create these files until an exact-path collision check and dependency aud
 - [x] Fail closed when a registered handler has no trusted capability schema.
 - [x] Add catalogue, argument-validation, metadata-isolation, and fail-closed regression tests.
 - [ ] Extend the registry through reviewed metadata additions when new trusted adapters are introduced.
-- [ ] Integrate the registry with the future Action AI planner; no planner exists yet.
+- [x] Integrate registry lookup and argument validation into the Action AI plan validator.
 
 ### Phase 2 — Dedicated Action AI
-- Add separate provider configuration and a strict structured response contract.
-- Parse and validate output; reject malformed, unknown, or unsafe tool proposals.
-- Keep conversation provider configuration independent.
+- [x] Add a separate ActionBrain planning module; the conversation gateway is not modified.
+- [x] Reuse the existing Groq-then-Gemini provider functions through an isolated planner interface.
+- [x] Define a strict JSON contract for action, clarification, and not-action outcomes.
+- [x] Validate exact response fields, registered tool IDs, platform availability, and typed arguments.
+- [x] Bound plans to eight steps and reject model-supplied permission/approval metadata.
+- [x] Add provider-fallback, malformed-plan, unknown-tool, invalid-argument, platform, and history tests.
+- [ ] Add independently configurable Action AI provider/model settings and action-specific token/timeout policy.
+- [ ] Connect the planner to the request orchestrator only after the orchestration design and regression tests are ready.
 
 ### Phase 3 — Request orchestration and clarification
 - Route every chat message through a deterministic orchestrator.
@@ -292,4 +297,4 @@ The architecture is ready for a first production-quality release when:
 
 ---
 
-**Implementation status:** Phase 1 now has an additive typed capability catalogue for the 13 existing built-in actions, strict input validation in the authorized action service, and regression tests. This does not yet implement the dedicated Action Intelligence Brain, structured task planner, natural-language argument collection, research adapter, multi-step executor, or result verification. The existing conversational-action integration remains a narrow prototype and still requires full CI review and Android device testing.
+**Implementation status:** Phase 1 is implemented: all 13 existing built-in actions have typed capability metadata, and the authorized action service enforces the schemas before approval/execution. Phase 2 now has a separate ActionBrain module that uses the existing Groq-then-Gemini functions to propose strict JSON plans and validates them against the registry. This planner is not yet connected to chat or execution. The action planner currently shares the existing provider credentials/configuration; independent action-provider settings remain open. Natural-language argument collection, orchestration, research integration, multi-step execution, and result verification are not implemented. Android device testing is still required.
