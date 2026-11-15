@@ -1,13 +1,14 @@
 """Localhost API for Neha chat, backend cloud memory, and approved actions."""
 import json
 import os
+import secrets
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 try:
     from .neha_gateway import NehaGateway
-    from .intent_interpreter import interpret_request
+    from .request_orchestrator import RequestOrchestrator
     from .cloud_memory import (
         NEHA_CLOUD_OWNER_ID, save_cloud_memory, load_cloud_memories,
     )
@@ -17,7 +18,7 @@ try:
     from .local_owner_auth import LocalOwnerAuth, OwnerAccountError
 except ImportError:
     from neha_gateway import NehaGateway
-    from intent_interpreter import interpret_request
+    from request_orchestrator import RequestOrchestrator
     from cloud_memory import (
         NEHA_CLOUD_OWNER_ID, save_cloud_memory, load_cloud_memories,
     )
@@ -30,12 +31,13 @@ except ImportError:
 HOST = os.getenv("NEHA_API_HOST", "127.0.0.1")
 PORT = 8765
 gateway = NehaGateway()
+request_orchestrator = RequestOrchestrator(gateway=gateway)
 owner_auth = LocalOwnerAuth(session_ttl_seconds=None)
 _action_service = None
 _action_service_lock = threading.Lock()
-_pending_chat_actions = {}
-_pending_chat_actions_lock = threading.Lock()
-_PENDING_ACTION_TTL_SECONDS = 120
+_pending_chat_plans = {}
+_pending_chat_plans_lock = threading.Lock()
+_PENDING_CHAT_PLAN_TTL_SECONDS = 120
 
 
 def _is_confirmation(message):
@@ -51,17 +53,22 @@ def _is_cancellation(message):
     }
 
 
-def _chat_action_result(token, action):
-    service = get_action_service()
-    approval = service.request_approval(token, action, {})
-    result = service.execute(token, action, {}, approval["approval_token"])
-    if (
-        isinstance(result, dict)
-        and result.get("status") == "executed_unverified"
-        and result.get("action") in MOBILE_ACTION_URLS
-    ):
-        result["launch_url"] = MOBILE_ACTION_URLS[result["action"]]
-    return result
+def _validate_chat_plan(service, steps):
+    """Validate every proposed step before any step is executed."""
+    if not isinstance(steps, list) or not 1 <= len(steps) <= 8:
+        raise ValueError("The proposed action plan is invalid.")
+    validated = []
+    for step in steps:
+        if not isinstance(step, dict):
+            raise ValueError("The proposed action plan is invalid.")
+        action = step.get("legacy_action")
+        arguments = step.get("arguments", {})
+        service._find_action(action)
+        clean_arguments = service._validate_arguments(action, arguments)
+        validated.append({"action": action, "arguments": clean_arguments})
+    if len(validated) > 1 and any(item["action"] == "send_sms" for item in validated):
+        raise ValueError("SMS composer handoff must be a separate, single-step request.")
+    return validated
 
 
 def get_action_service():
@@ -161,7 +168,7 @@ class NehaAPIHandler(BaseHTTPRequestHandler):
             revoked = owner_auth.logout(token)
             self.send_json(200 if revoked else 401, {"success": bool(revoked)})
             return
-        allowed = ("/chat", "/memory/save", "/memory/load", "/actions/approve", "/actions/execute")
+        allowed = ("/chat", "/chat/approve", "/chat/cancel", "/memory/save", "/memory/load", "/actions/approve", "/actions/execute")
         if self.path not in allowed:
             self.send_json(404, {"error": "Not found"})
             return
@@ -173,6 +180,74 @@ class NehaAPIHandler(BaseHTTPRequestHandler):
             payload = self.read_payload()
         except (ValueError, UnicodeDecodeError, json.JSONDecodeError):
             self.send_json(400, {"error": "Invalid JSON request"})
+            return
+
+        if self.path == "/chat/approve":
+            plan_id = payload.get("plan_id")
+            if payload.get("owner_confirmed") is not True or not isinstance(plan_id, str):
+                self.send_json(403, {"success": False, "error": "Explicit owner confirmation is required"})
+                return
+            owner = owner_auth.verify_session(token)
+            owner_id = owner["id"]
+            with _pending_chat_plans_lock:
+                stored = _pending_chat_plans.get(owner_id)
+                if not stored or stored.get("plan_id") != plan_id or stored["expires_at"] <= time.monotonic():
+                    _pending_chat_plans.pop(owner_id, None)
+                    self.send_json(409, {"success": False, "error": "This action plan expired or is no longer pending"})
+                    return
+                pending_plan = _pending_chat_plans.pop(owner_id)
+            try:
+                service = get_action_service()
+                steps = _validate_chat_plan(service, pending_plan["steps"])
+                results = []
+                for step in steps:
+                    approval = service.request_approval(token, step["action"], step["arguments"])
+                    result = service.execute(token, step["action"], step["arguments"], approval["approval_token"])
+                    if not isinstance(result, dict):
+                        result = {"status": "execution_failed", "message": "Action returned an invalid result"}
+                    if result.get("status") == "executed_unverified":
+                        if step["action"] in MOBILE_ACTION_URLS:
+                            result["launch_url"] = MOBILE_ACTION_URLS[step["action"]]
+                        if step["action"] == "send_sms":
+                            result["sms_payload"] = step["arguments"]
+                    results.append(result)
+                    if result.get("status") != "executed_unverified":
+                        break
+                completed = sum(1 for item in results if item.get("status") == "executed_unverified")
+                response = {
+                    "success": completed == len(steps),
+                    "action_results": results,
+                    "completed_steps": completed,
+                    "total_steps": len(steps),
+                }
+                if len(results) == 1 and results[0].get("sms_payload"):
+                    response["sms_payload"] = results[0]["sms_payload"]
+                    response["reply"] = "The SMS details are ready. Review them in Android's SMS composer and press Send yourself."
+                elif completed == len(steps):
+                    response["reply"] = "The approved action plan finished. Android could not independently verify every physical result."
+                else:
+                    response["reply"] = "The plan stopped after a step failed. Earlier completed steps may not be reversible."
+                response["launch_urls"] = [item["launch_url"] for item in results if item.get("launch_url")]
+                self.send_json(200, response)
+            except AuthorizationError:
+                self.send_json(401, {"success": False, "error": "Login required"})
+            except (ActionServiceConfigurationError, OwnerAccountError):
+                self.send_json(503, {"success": False, "error": "Neha action service is not configured"})
+            except ValueError as exc:
+                self.send_json(400, {"success": False, "error": str(exc)})
+            except Exception:
+                self.send_json(500, {"success": False, "error": "Approved action plan failed safely"})
+            return
+
+        if self.path == "/chat/cancel":
+            plan_id = payload.get("plan_id")
+            owner = owner_auth.verify_session(token)
+            owner_id = owner["id"]
+            with _pending_chat_plans_lock:
+                stored = _pending_chat_plans.get(owner_id)
+                if stored and stored.get("plan_id") == plan_id:
+                    _pending_chat_plans.pop(owner_id, None)
+            self.send_json(200, {"success": True, "cancelled": True})
             return
 
         if self.path == "/memory/save":
@@ -264,62 +339,45 @@ class NehaAPIHandler(BaseHTTPRequestHandler):
         owner_id = owner["id"]
 
         try:
-            pending = None
-            with _pending_chat_actions_lock:
-                stored = _pending_chat_actions.get(owner_id)
-                if stored and stored["expires_at"] <= time.monotonic():
-                    _pending_chat_actions.pop(owner_id, None)
-                    stored = None
-                if stored and _is_confirmation(message):
-                    pending = _pending_chat_actions.pop(owner_id)
-                elif stored and _is_cancellation(message):
-                    _pending_chat_actions.pop(owner_id, None)
-                    self.send_json(200, {"reply": "Okay, I cancelled that action. Nothing was executed."})
-                    return
-                elif stored:
-                    # A new request replaces the old unconfirmed request.
-                    _pending_chat_actions.pop(owner_id, None)
+            with _pending_chat_plans_lock:
+                # A fresh request invalidates any older, unconfirmed plan.
+                _pending_chat_plans.pop(owner_id, None)
 
-            if pending:
-                result = _chat_action_result(token, pending["action"])
-                if result.get("status") == "executed_unverified":
-                    reply = f"{pending['action']} was launched. Android has not independently verified the result."
-                else:
-                    reply = result.get("message") or f"I couldn't complete {pending['action']}. Status: {result.get('status', 'unknown')}."
-                response_data = {"reply": reply, "action_result": result}
-                if result.get("launch_url"):
-                    response_data["launch_url"] = result["launch_url"]
-                self.send_json(200, response_data)
-                return
-
-            intent = interpret_request(message.strip())
-            if isinstance(intent, dict) and intent.get("type") == "action":
-                action = intent.get("action")
-                service = get_action_service()
-                available = {
-                    item.get("name"): item
-                    for item in service.list_actions(token)
-                    if isinstance(item, dict)
-                }
-                if action in available and available[action].get("enabled") is True:
-                    with _pending_chat_actions_lock:
-                        _pending_chat_actions[owner_id] = {
-                            "action": action,
-                            "expires_at": time.monotonic() + _PENDING_ACTION_TTL_SECONDS,
-                        }
-                    friendly = action.replace("_", " ")
-                    self.send_json(200, {
-                        "reply": f"I can {friendly} for you. Should I do that?",
-                        "pending_action": {"action": action, "expires_in_seconds": _PENDING_ACTION_TTL_SECONDS},
-                    })
-                    return
-
-            reply = gateway.ask(
+            routed = request_orchestrator.handle(
                 message.strip(),
                 history=safe_history,
                 user_id=NEHA_CLOUD_OWNER_ID or None,
             )
-            self.send_json(200, {"reply": str(reply)})
+            route = routed.get("route")
+            response_data = {"reply": str(routed.get("reply", "")), "route": route}
+
+            if route == "action_plan":
+                service = get_action_service()
+                available = {
+                    item.get("name"): item
+                    for item in service.list_actions(token)
+                    if isinstance(item, dict) and item.get("enabled") is True
+                }
+                validated = _validate_chat_plan(service, routed.get("steps", []))
+                if any(step["action"] not in available for step in validated):
+                    self.send_json(400, {"reply": "That action is not currently enabled.", "route": "planning_error"})
+                    return
+                plan_id = secrets.token_urlsafe(24)
+                with _pending_chat_plans_lock:
+                    _pending_chat_plans[owner_id] = {
+                        "plan_id": plan_id,
+                        "steps": validated,
+                        "expires_at": time.monotonic() + _PENDING_CHAT_PLAN_TTL_SECONDS,
+                    }
+                response_data["pending_plan"] = {
+                    "plan_id": plan_id,
+                    "expires_in_seconds": _PENDING_CHAT_PLAN_TTL_SECONDS,
+                    "steps": [
+                        {"action": step["action"], "arguments": step["arguments"]}
+                        for step in validated
+                    ],
+                }
+            self.send_json(200, response_data)
         except AuthorizationError:
             self.send_json(401, {"success": False, "error": "Login required"})
         except (ActionServiceConfigurationError, OwnerAccountError):
