@@ -36,7 +36,15 @@ def _run_checked_action(command):
     result = run_action(command)
     if not isinstance(result, str) or not result.strip():
         raise RuntimeError("The device action returned no usable result.")
-    if result.startswith(_ACTION_FAILURE_PREFIXES):
+    lowered = result.strip().lower()
+    failure_markers = (
+        " failed", "failure", " unavailable", "could not ", "couldn't ",
+        "not found", "isn't configured", "timed out", "invalid data",
+        "don't know that action",
+    )
+    if result.startswith(_ACTION_FAILURE_PREFIXES) or any(
+        marker in lowered for marker in failure_markers
+    ):
         raise RuntimeError(result)
     return result
 
