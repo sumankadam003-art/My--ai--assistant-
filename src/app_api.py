@@ -61,7 +61,7 @@ def _validate_chat_plan(service, steps):
     for step in steps:
         if not isinstance(step, dict):
             raise ValueError("The proposed action plan is invalid.")
-        action = step.get("legacy_action")
+        action = step.get("legacy_action", step.get("action"))
         arguments = step.get("arguments", {})
         service._find_action(action)
         clean_arguments = service._validate_arguments(action, arguments)
