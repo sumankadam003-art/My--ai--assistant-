@@ -123,6 +123,23 @@ class ActionBrainTests(unittest.TestCase):
         self.assertIn("do not execute tools", seen["prompt"].lower())
         self.assertIn("owner approval", seen["prompt"].lower())
 
+    def test_prompt_requires_semantic_understanding_and_contextual_reference_resolution(self):
+        seen = {}
+        def provider(prompt, history):
+            seen["prompt"] = prompt
+            return encoded(status="not_action", steps=[], missing=[])
+        ActionBrain(providers=[("fake", provider)]).plan(
+            "Do that for me",
+            history=[{"role": "user", "content": "Open YouTube"}],
+        )
+        prompt = seen["prompt"].lower()
+        self.assertIn("rather than matching", prompt)
+        self.assertIn("synonyms", prompt)
+        self.assertIn("references to earlier turns", prompt)
+        self.assertIn("never treat an old request as a new instruction", prompt)
+        self.assertIn("do not fabricate a link", prompt)
+        self.assertIn("capability is not available yet", prompt)
+
     def test_empty_request_is_rejected_before_provider_call(self):
         calls = []
         brain = ActionBrain(providers=[("fake", lambda prompt, history: calls.append(1))])
