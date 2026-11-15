@@ -1,6 +1,6 @@
 # Neha Action Intelligence — Architecture and Implementation Plan
 
-**Status:** Design baseline; implementation not yet started  
+**Status:** Design baseline; Phase 1 typed capability catalogue implemented and enforced by the authorized action service  
 **Audited branch:** `feature/conversational-action-chat`  
 **Design principle:** One conversational interface, one dedicated action-planning brain, many trusted capabilities.
 
@@ -219,9 +219,13 @@ Do not create these files until an exact-path collision check and dependency aud
 - Confirm existing automated test commands and current CI baseline.
 
 ### Phase 1 — Typed capability registry
-- Add structured input/output schemas and trusted capability metadata.
-- Adapt existing registered actions without changing their observable behaviour.
-- Add tests for unknown tools, invalid arguments, disabled tools, permissions, risk, and approval binding.
+- [x] Add structured input/output schemas and trusted capability metadata for all 13 existing built-in actions.
+- [x] Add stable tool IDs, platform declarations, permission names, risk/approval metadata, read-only/reversible/idempotent flags, and bounded timeouts.
+- [x] Enforce schemas in the authorized action service before approval is issued or execution is allowed.
+- [x] Fail closed when a registered handler has no trusted capability schema.
+- [x] Add catalogue, argument-validation, metadata-isolation, and fail-closed regression tests.
+- [ ] Extend the registry through reviewed metadata additions when new trusted adapters are introduced.
+- [ ] Integrate the registry with the future Action AI planner; no planner exists yet.
 
 ### Phase 2 — Dedicated Action AI
 - Add separate provider configuration and a strict structured response contract.
@@ -288,4 +292,4 @@ The architecture is ready for a first production-quality release when:
 
 ---
 
-**Implementation status:** This file is a design baseline only. It does not claim that the Action Intelligence Brain, research adapter, typed tool schemas, or multi-step executor have been implemented. The existing conversational-action PR remains a narrow prototype/integration step and must be tested and reviewed separately.
+**Implementation status:** Phase 1 now has an additive typed capability catalogue for the 13 existing built-in actions, strict input validation in the authorized action service, and regression tests. This does not yet implement the dedicated Action Intelligence Brain, structured task planner, natural-language argument collection, research adapter, multi-step executor, or result verification. The existing conversational-action integration remains a narrow prototype and still requires full CI review and Android device testing.
