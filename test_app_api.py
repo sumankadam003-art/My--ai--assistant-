@@ -202,6 +202,18 @@ class ActionAPIIntegrationTests(unittest.TestCase):
         self.assertEqual(status, 409)
         self.assertEqual(self.service.executed, [])
 
+    def test_chat_cancel_rejects_unknown_or_stale_plan_id(self):
+        status, result = self.request(
+            "POST", "/chat/cancel", {"plan_id": "not-the-pending-plan"}, token="valid"
+        )
+        self.assertEqual(status, 409)
+        self.assertFalse(result["cancelled"])
+
+    def test_chat_cancel_requires_a_plan_id(self):
+        status, result = self.request("POST", "/chat/cancel", {}, token="valid")
+        self.assertEqual(status, 400)
+        self.assertFalse(result["cancelled"])
+
     def test_chat_multi_step_plan_executes_in_order_after_single_owner_approval(self):
         planned = {
             "route": "action_plan", "reply": "Two-step plan.",
