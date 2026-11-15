@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import API_URL from '../apiConfig';
 import {
-  Alert, View, Text, TextInput, TouchableOpacity, ScrollView,
+  Alert, Linking, View, Text, TextInput, TouchableOpacity, ScrollView,
   StyleSheet, StatusBar, KeyboardAvoidingView, Platform, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -80,7 +80,11 @@ export default function HomeScreen() {
     setInput('');
     setMode('THINKING');
     try {
-      const response = await fetch(`${API_URL}/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ message: value }) });
+      const history = messages.slice(-40).map(item => ({
+        role: item.from === 'user' ? 'user' : 'assistant',
+        content: item.text,
+      }));
+      const response = await fetch(`${API_URL}/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ message: value, history }) });
       const data = await response.json();
       if (response.status === 401) {
         await logout();
@@ -94,6 +98,13 @@ export default function HomeScreen() {
       }
       if (!response.ok) throw new Error();
       setMessages(old => [...old, { id: String(Date.now()) + '-reply', text: String(data.reply), from: 'neha' }]);
+      if (typeof data.launch_url === 'string') {
+        try {
+          await Linking.openURL(data.launch_url);
+        } catch {
+          setMessages(old => [...old, { id: String(Date.now()) + '-launch-error', text: 'The action was approved, but Android could not open the requested app link.', from: 'neha' }]);
+        }
+      }
       setMode('ONLINE');
     } catch {
       setMessages(old => [...old, { id: String(Date.now()) + '-error', text: 'Could not connect to Neha AI. Check that the API server is running.', from: 'neha' }]);
