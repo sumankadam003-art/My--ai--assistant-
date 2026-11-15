@@ -248,10 +248,15 @@ class NehaAPIHandler(BaseHTTPRequestHandler):
             plan_id = payload.get("plan_id")
             owner = owner_auth.verify_session(token)
             owner_id = owner["id"]
+            if not isinstance(plan_id, str) or not plan_id:
+                self.send_json(400, {"success": False, "cancelled": False, "error": "A valid plan ID is required"})
+                return
             with _pending_chat_plans_lock:
                 stored = _pending_chat_plans.get(owner_id)
-                if stored and stored.get("plan_id") == plan_id:
-                    _pending_chat_plans.pop(owner_id, None)
+                if not stored or stored.get("plan_id") != plan_id:
+                    self.send_json(409, {"success": False, "cancelled": False, "error": "This action plan is no longer pending"})
+                    return
+                _pending_chat_plans.pop(owner_id, None)
             self.send_json(200, {"success": True, "cancelled": True})
             return
 
