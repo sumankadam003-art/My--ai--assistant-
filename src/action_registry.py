@@ -10,11 +10,12 @@ except ImportError:
 _ACTION_FAILURE_PREFIXES = (
     "Volume control unavailable.",
     "Volume control timed out.",
+    "Volume control failed",
     "Could not read volume information.",
     "Camera unavailable:",
     "Could not open camera.",
-    "Camera launch timed out.",
     "Could not open the camera.",
+    "Camera launch timed out.",
     "I don't know that action yet.",
     "App '",
     "Required command '",
