@@ -201,10 +201,15 @@ class NehaAPIHandler(BaseHTTPRequestHandler):
                 steps = _validate_chat_plan(service, pending_plan["steps"])
                 results = []
                 for step in steps:
-                    approval = service.request_approval(token, step["action"], step["arguments"])
-                    result = service.execute(token, step["action"], step["arguments"], approval["approval_token"])
-                    if not isinstance(result, dict):
-                        result = {"status": "execution_failed", "message": "Action returned an invalid result"}
+                    try:
+                        approval = service.request_approval(token, step["action"], step["arguments"])
+                        result = service.execute(token, step["action"], step["arguments"], approval["approval_token"])
+                        if not isinstance(result, dict):
+                            result = {"status": "execution_failed", "message": "Action returned an invalid result"}
+                    except AuthorizationError:
+                        result = {"status": "authorization_failed", "message": "Owner authorization expired during the plan"}
+                    except Exception:
+                        result = {"status": "execution_failed", "message": "This step failed safely"}
                     if result.get("status") == "executed_unverified":
                         if step["action"] in MOBILE_ACTION_URLS:
                             result["launch_url"] = MOBILE_ACTION_URLS[step["action"]]
