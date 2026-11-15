@@ -153,15 +153,10 @@ class ActionBrainTests(unittest.TestCase):
             brain.plan(" ")
         self.assertEqual(calls, [])
 
-    def test_action_provider_order_is_independently_configurable(self):
-        with patch.dict(os.environ, {"NEHA_ACTION_AI_PROVIDER_ORDER": "gemini,groq"}):
+    def test_action_provider_order_ignores_environment_override(self):
+        with patch.dict(os.environ, {"NEHA_ACTION_AI_PROVIDER_ORDER": "groq,unknown"}):
             brain = ActionBrain()
         self.assertEqual([name for name, _ in brain.providers], ["gemini", "groq"])
-
-    def test_invalid_action_provider_order_is_rejected(self):
-        with patch.dict(os.environ, {"NEHA_ACTION_AI_PROVIDER_ORDER": "groq,unknown"}):
-            with self.assertRaises(ValueError):
-                ActionBrain()
 
     def test_all_provider_failures_return_planning_error(self):
         def broken(prompt, history):
