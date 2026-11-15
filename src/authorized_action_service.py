@@ -51,10 +51,9 @@ class AuthorizedActionService:
         try:
             capability = DEFAULT_CAPABILITY_REGISTRY.get_by_legacy_action(action)
         except UnknownCapabilityError:
-            # Preserve the existing unavailable-action response for unknown IDs.
-            if action != "send_sms" and not arguments:
-                return {}
-            raise ValueError("This action is not registered.")
+            # A registered handler is not executable through this service until
+            # trusted capability metadata and an input schema exist for it.
+            raise ValueError("This action has no trusted capability schema.")
 
         DEFAULT_CAPABILITY_REGISTRY.validate_arguments(
             capability.tool_id, arguments
