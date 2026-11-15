@@ -387,6 +387,8 @@ class NehaAPIHandler(BaseHTTPRequestHandler):
             self.send_json(401, {"success": False, "error": "Login required"})
         except (ActionServiceConfigurationError, OwnerAccountError):
             self.send_json(503, {"reply": "Neha's action service is not configured yet."})
+        except ValueError as exc:
+            self.send_json(400, {"reply": str(exc), "route": "planning_error"})
         except Exception:
             self.send_json(500, {"error": "Neha could not process that message"})
 
