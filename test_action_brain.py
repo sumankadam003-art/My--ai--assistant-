@@ -43,6 +43,13 @@ class ActionBrainTests(unittest.TestCase):
         self.assertEqual(result["steps"], [])
         self.assertEqual(result["missing_fields"], ["recipient", "message"])
 
+    def test_unsupported_action_is_distinguished_from_normal_conversation(self):
+        raw = encoded(status="unsupported", steps=[], missing=[], message="That capability is not available yet.")
+        brain = ActionBrain(providers=[("fake", lambda prompt, history: raw)])
+        result = brain.plan("Delete every file on my phone")
+        self.assertEqual(result["status"], "unsupported")
+        self.assertEqual(result["steps"], [])
+
     def test_non_action_request_is_not_misrepresented_as_tool_call(self):
         raw = encoded(status="not_action", steps=[], missing=[], message="This is a chat request.")
         brain = ActionBrain(providers=[("fake", lambda prompt, history: raw)])
