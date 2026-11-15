@@ -52,7 +52,7 @@ class ActionBrain:
         else:
             available = {"groq": ask_groq, "gemini": ask_gemini}
             configured = os.environ.get(
-                "NEHA_ACTION_AI_PROVIDER_ORDER", "groq,gemini"
+                "NEHA_ACTION_AI_PROVIDER_ORDER", "gemini,groq"
             )
             names = [name.strip().lower() for name in configured.split(",") if name.strip()]
             if not names or len(names) != len(set(names)) or any(name not in available for name in names):
