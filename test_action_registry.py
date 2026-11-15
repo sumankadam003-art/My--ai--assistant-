@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import patch
 
 from src.action_registry import BUILTIN_ACTIONS, build_default_action_manager
+from src.action_engine_bridge import ActionEngineBridge
 
 
 class BuiltinActionRegistryTests(unittest.TestCase):
@@ -77,6 +78,20 @@ class BuiltinActionRegistryTests(unittest.TestCase):
             manager = build_default_action_manager()
             action = manager.get_action("battery")
             self.assertEqual(action.handler(), "Battery is at 80 percent.")
+
+
+    def test_failed_device_adapter_is_not_reported_as_executed(self):
+        with patch("src.action_registry.run_action", return_value="Volume control unavailable. Check Termux:API installation."):
+            manager = build_default_action_manager()
+            bridge = ActionEngineBridge(
+                manager,
+                permission_checker=lambda actor, permission: True,
+            )
+            result = bridge.execute(
+                "volume up", actor="owner", approved=True
+            )
+        self.assertEqual(result.status, "execution_failed")
+        self.assertFalse(result.ok)
 
 
 if __name__ == "__main__":
