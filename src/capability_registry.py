@@ -78,7 +78,7 @@ def _capability(
 _SMS_INPUT = {
     "type": "object",
     "properties": {
-        "recipient": {"type": "string", "minLength": 7, "maxLength": 16},
+        "recipient": {"type": "string", "minLength": 7, "maxLength": 32},
         "message": {"type": "string", "minLength": 1, "maxLength": 1600},
     },
     "required": ["recipient", "message"],
