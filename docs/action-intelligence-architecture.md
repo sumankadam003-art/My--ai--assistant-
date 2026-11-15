@@ -1,6 +1,6 @@
 # Neha Action Intelligence — Architecture and Implementation Plan
 
-**Status:** Phases 1–2 implemented; Phase 3 deterministic routing prototype added and under CI validation  
+**Status:** Phases 1–3 integrated; authenticated chat approval and bounded sequential execution implemented; CI passing  
 **Audited branch:** `feature/conversational-action-chat`  
 **Design principle:** One conversational interface, one dedicated action-planning brain, many trusted capabilities.
 
@@ -244,12 +244,18 @@ Do not create these files until an exact-path collision check and dependency aud
 - [x] Return validated action plans without executing them or issuing approvals.
 - [x] Fail closed on Action AI planning errors instead of silently reinterpreting them as ordinary chat.
 - [x] Add routing, history, invalid-input, and no-execution tests.
-- [ ] Integrate the orchestrator into the authenticated `/chat` endpoint after CI validation and a compatibility review of pending confirmations.
-- [ ] Collect missing arguments through natural conversation and validate them.
+- [x] Integrate the orchestrator into the authenticated `/chat` endpoint.
+- [x] Return clarification questions through chat and validate resulting plans using conversation history.
 
 ### Phase 4 — Sequential multi-step task execution
-- Add task state, dependencies, bounded loops, cancellation, retries only for safe idempotent operations, and truthful step results.
-- Require approvals per consequential step or exact approved batch; never infer consent from AI output.
+- [x] Execute bounded sequential plans of up to eight validated steps.
+- [x] Validate all steps and arguments before execution.
+- [x] Require an authenticated owner session and explicit mobile confirmation of the exact plan.
+- [x] Issue a separate one-time approval for each step through the authorized action service.
+- [x] Stop on failure and report partial completion.
+- [x] Expire pending plans after 120 seconds and support cancellation.
+- [x] Keep SMS as a single-step Android composer handoff; reject mixed SMS multi-step plans.
+- [ ] Add dependency graphs, cancellation during execution, safe retries, and overall task deadlines.
 
 ### Phase 5 — Research integration
 - Add web search/retrieval as a read-only capability.
@@ -258,12 +264,13 @@ Do not create these files until an exact-path collision check and dependency aud
 
 ### Phase 6 — Mobile integration and user experience
 - Keep the single chat interface as the primary interface.
-- Integrate SMS argument collection while preserving the existing SMS composer and manual Send action.
+- [x] Integrate SMS arguments into chat plans while preserving the Android composer and manual Send action.
 - Replace placeholder UI affordances only when their real integrations are ready.
 - Test on the actual Android device; CI alone cannot verify Android intents or installed-app behaviour.
 
 ### Phase 7 — Reliability and expansion
-- Add end-to-end tests for conversation, research, single actions, multi-step tasks, cancellations, expired approvals, provider failures, tool failures, and prompt-injection attempts.
+- [x] Add regression tests for authenticated conversation, clarification, approval, cancellation, multi-step ordering, SMS handoff, and mixed-SMS rejection.
+- [ ] Add end-to-end tests for research, expired approvals, provider failures, tool failures, and prompt-injection attempts.
 - Add new trusted capabilities incrementally.
 - Consider voice only after text orchestration is reliable.
 
@@ -302,4 +309,4 @@ The architecture is ready for a first production-quality release when:
 
 ---
 
-**Implementation status:** Phase 1 is implemented: all 13 existing built-in actions have typed capability metadata, and the authorized action service enforces the schemas before approval/execution. Phase 2 has a separate ActionBrain module that proposes strict JSON plans and validates them against the registry. Phase 3 now has an independently tested deterministic orchestrator prototype: conversation requests use the existing gateway, clarification returns a question, and action requests return a validated plan without executing it. The orchestrator is not yet wired into `/chat`; the existing API path remains unchanged pending CI and compatibility review. The planner currently reuses existing provider model/API-key configuration. Natural-language argument collection, research integration, multi-step execution, and result verification are not implemented. Android device testing is still required.
+**Implementation status:** Phases 1–3 are integrated. All 13 built-in capabilities have typed metadata; ActionBrain produces bounded structured plans; and authenticated chat requests pass through RequestOrchestrator. Normal conversation continues through the existing NehaGateway with conversation history and memory identity. Missing information returns clarification instead of guessed arguments. The mobile chat presents proposed steps and arguments in a native confirmation dialog. Approval requires an active owner login session plus an explicit approval tap; the backend issues separate one-time approvals through the existing authorized action service. Sequential plans execute in order, stop on failure, and report partial completion. SMS remains a single-step Android composer handoff with manual Send required; it is excluded from mixed multi-step plans. Pending plans expire after 120 seconds and can be cancelled. CI has passed backend tests, mobile TypeScript checks, and the secret-file guard. Remaining work includes research integration, cancellation during execution, dependency graphs, deadline/retry policies, additional prompt-injection and failure tests, and actual Android device testing. ActionBrain still reuses existing provider model/API-key configuration.
