@@ -15,7 +15,10 @@ class FakeActionService:
         self.fail_actions = set()
 
     def list_actions(self, identity=None):
-        return [{"name": "safe test", "description": "A safe test action", "enabled": True}]
+        return [
+            {"name": "safe test", "description": "A safe test action", "enabled": True},
+            {"name": "send_sms", "description": "Prepare SMS", "enabled": True},
+        ]
 
     def _find_action(self, action):
         if action not in ("safe test", "send_sms"):
