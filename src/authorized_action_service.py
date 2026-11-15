@@ -7,8 +7,14 @@ from typing import Mapping
 import re
 try:
     from .action_authorization import ApprovalStore, AuthorizationError, OwnerAuthorizer
+    from .capability_registry import (
+        DEFAULT_CAPABILITY_REGISTRY, UnknownCapabilityError,
+    )
 except ImportError:
     from action_authorization import ApprovalStore, AuthorizationError, OwnerAuthorizer
+    from capability_registry import (
+        DEFAULT_CAPABILITY_REGISTRY, UnknownCapabilityError,
+    )
 
 
 class AuthorizedActionService:
@@ -41,10 +47,20 @@ class AuthorizedActionService:
         """Validate the only currently supported parameterized action."""
         if not isinstance(arguments, Mapping):
             raise ValueError("Action arguments must be an object.")
-        if action != "send_sms":
-            if arguments:
-                raise ValueError("This action does not accept arguments.")
-            return {}
+
+        try:
+            capability = DEFAULT_CAPABILITY_REGISTRY.get_by_legacy_action(action)
+        except UnknownCapabilityError:
+            # Preserve the existing unavailable-action response for unknown IDs.
+            if action != "send_sms" and not arguments:
+                return {}
+            raise ValueError("This action is not registered.")
+
+        DEFAULT_CAPABILITY_REGISTRY.validate_arguments(
+            capability.tool_id, arguments
+        )
+        if capability.legacy_action != "send_sms":
+            return dict(arguments)
 
         if set(arguments) != {"recipient", "message"}:
             raise ValueError("SMS requires exactly recipient and message.")
