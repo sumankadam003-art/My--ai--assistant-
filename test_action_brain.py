@@ -18,6 +18,11 @@ def encoded(status="action", steps=None, missing=None, message="Plan ready"):
 
 
 class ActionBrainTests(unittest.TestCase):
+    def test_default_provider_order_is_gemini_then_groq(self):
+        with patch.dict(os.environ, {}, clear=True):
+            brain = ActionBrain()
+        self.assertEqual([name for name, _ in brain.providers], ["gemini", "groq"])
+
     def test_valid_action_plan_maps_to_registered_legacy_action(self):
         brain = ActionBrain(providers=[("fake", lambda prompt, history: encoded())])
         result = brain.plan("Open YouTube")
