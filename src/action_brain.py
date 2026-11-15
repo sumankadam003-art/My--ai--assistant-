@@ -103,19 +103,19 @@ class ActionBrain:
             "Select only tool IDs in the supplied catalogue. Never invent a tool, argument, "
             "URL, permission, approval, or capability. If the user requests an action that "
             "is not represented in the catalogue, do not fabricate a link, claim execution, "
-            "or pretend it is supported. Return not_action with a brief honest explanation "
+            "or pretend it is supported. Return status unsupported with a brief honest explanation "
             "that the capability is not available yet. If a supported action needs a "
             "required argument that is missing or ambiguous, ask a concise clarification "
             "and return no steps. Do not guess phone numbers, message text, recipients, "
             "or other consequential arguments. For requests that are not device/tool "
             "actions, return status not_action. Return exactly one JSON object and no "
             "Markdown, with this shape: "
-            '{"status":"action|clarification|not_action","message":"short user-facing '
+            '{"status":"action|clarification|not_action|unsupported","message":"short user-facing '
             'message","steps":[{"tool_id":"catalogue ID","arguments":{}}],'
             '"missing_fields":["field name"]}. '
             "For action, include 1 to 8 steps and an empty missing_fields list. "
             "For clarification, include no steps and at least one missing_fields item. "
-            "For not_action, include no steps and no missing_fields. "
+            "For not_action or unsupported, include no steps and no missing_fields. "
             "Do not include dependencies yet. The application enforces permissions "
             "and owner approval separately.\n"
             "CAPABILITY CATALOGUE:\n"
@@ -143,7 +143,7 @@ class ActionBrain:
         message = plan.get("message")
         steps = plan.get("steps")
         missing = plan.get("missing_fields")
-        if status not in ("action", "clarification", "not_action"):
+        if status not in ("action", "clarification", "not_action", "unsupported"): 
             raise ActionPlanningError("The Action AI returned an unsupported plan status.")
         if not isinstance(message, str) or not message.strip() or len(message) > 1000:
             raise ActionPlanningError("The Action AI message is invalid.")
@@ -155,7 +155,7 @@ class ActionBrain:
         if status == "action":
             if not 1 <= len(steps) <= MAX_PLAN_STEPS or missing:
                 raise ActionPlanningError("An action plan must contain 1 to 8 complete steps.")
-        elif steps or (status == "clarification" and not missing) or (status == "not_action" and missing):
+        elif steps or (status == "clarification" and not missing) or (status in ("not_action", "unsupported") and missing):
             raise ActionPlanningError("The plan status does not match its steps or missing fields.")
 
         validated_steps = []
