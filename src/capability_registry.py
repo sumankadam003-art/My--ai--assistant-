@@ -162,6 +162,15 @@ class CapabilityRegistry:
             raise UnknownCapabilityError("This capability is not registered.")
         return self._capabilities[tool_id]
 
+    def get_by_legacy_action(self, action: str) -> Capability:
+        """Resolve an existing action-service name to its stable tool metadata."""
+        if isinstance(action, str):
+            normalized = action.strip().lower()
+            for item in self._capabilities.values():
+                if item.legacy_action == normalized:
+                    return item
+        raise UnknownCapabilityError("This capability is not registered.")
+
     def list_capabilities(self):
         """Return serializable metadata without exposing executable handlers."""
         return [
