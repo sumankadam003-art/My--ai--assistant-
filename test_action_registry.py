@@ -65,5 +65,19 @@ class BuiltinActionRegistryTests(unittest.TestCase):
         run_action.assert_not_called()
 
 
+    def test_legacy_device_error_message_is_raised_as_execution_failure(self):
+        with patch("src.action_registry.run_action", return_value="Volume control unavailable. Check Termux:API installation."):
+            manager = build_default_action_manager()
+            action = manager.get_action("volume up")
+            with self.assertRaisesRegex(RuntimeError, "Volume control unavailable"):
+                action.handler()
+
+    def test_legacy_device_success_message_is_preserved(self):
+        with patch("src.action_registry.run_action", return_value="Battery is at 80 percent."):
+            manager = build_default_action_manager()
+            action = manager.get_action("battery")
+            self.assertEqual(action.handler(), "Battery is at 80 percent.")
+
+
 if __name__ == "__main__":
     unittest.main()
