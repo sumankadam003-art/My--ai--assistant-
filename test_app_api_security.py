@@ -73,7 +73,8 @@ class AppAPISecurityTests(unittest.TestCase):
         import httpx
         for method, path in (("GET", "/actions"), ("POST", "/memory/save"),
                              ("POST", "/memory/load"), ("POST", "/actions/approve"),
-                             ("POST", "/actions/execute")):
+                             ("POST", "/actions/execute"), ("POST", "/chat/approve"),
+                             ("POST", "/chat/cancel")):
             response = httpx.request(method, self.base + path, json={} if method == "POST" else None, timeout=3)
             self.assertEqual(response.status_code, 401, path)
 
