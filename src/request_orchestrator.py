@@ -59,6 +59,14 @@ class RequestOrchestrator:
                 "steps": [],
             }
 
+        if plan["status"] == "unsupported":
+            return {
+                "route": "unsupported",
+                "reply": plan["message"],
+                "plan": plan,
+                "steps": [],
+            }
+
         if plan["status"] == "clarification":
             return {
                 "route": "clarification",
