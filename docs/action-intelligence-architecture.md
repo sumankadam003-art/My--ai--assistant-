@@ -234,7 +234,8 @@ Do not create these files until an exact-path collision check and dependency aud
 - [x] Validate exact response fields, registered tool IDs, platform availability, and typed arguments.
 - [x] Bound plans to eight steps and reject model-supplied permission/approval metadata.
 - [x] Add provider-fallback, malformed-plan, unknown-tool, invalid-argument, platform, and history tests.
-- [ ] Add independently configurable Action AI provider/model settings and action-specific token/timeout policy.
+- [x] Add an independent Action AI provider fallback order through `NEHA_ACTION_AI_PROVIDER_ORDER` (default: `groq,gemini`); invalid provider names and duplicates are rejected.
+- [ ] Add action-specific model, token, and timeout settings; current provider adapters still use their existing model/credential configuration.
 - [ ] Connect the planner to the request orchestrator only after the orchestration design and regression tests are ready.
 
 ### Phase 3 — Request orchestration and clarification
@@ -297,4 +298,4 @@ The architecture is ready for a first production-quality release when:
 
 ---
 
-**Implementation status:** Phase 1 is implemented: all 13 existing built-in actions have typed capability metadata, and the authorized action service enforces the schemas before approval/execution. Phase 2 now has a separate ActionBrain module that uses the existing Groq-then-Gemini functions to propose strict JSON plans and validates them against the registry. This planner is not yet connected to chat or execution. The action planner currently shares the existing provider credentials/configuration; independent action-provider settings remain open. Natural-language argument collection, orchestration, research integration, multi-step execution, and result verification are not implemented. Android device testing is still required.
+**Implementation status:** Phase 1 is implemented: all 13 existing built-in actions have typed capability metadata, and the authorized action service enforces the schemas before approval/execution. Phase 2 now has a separate ActionBrain module that uses the existing Groq-then-Gemini functions to propose strict JSON plans and validates them against the registry. This planner is not yet connected to chat or execution. The action planner has an independent provider fallback-order setting, but currently reuses the existing provider model and API-key configuration. Natural-language argument collection, orchestration, research integration, multi-step execution, and result verification are not implemented. Android device testing is still required.
