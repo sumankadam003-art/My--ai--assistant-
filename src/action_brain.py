@@ -194,13 +194,21 @@ class ActionBrain:
         safe_history = self._clean_history(history)
         prompt = self._build_prompt(request, safe_history)
         failures = []
+        last_validation_error = None
         for name, provider in self.providers:
             try:
                 raw = provider(prompt, [])
                 return self.validate_plan(raw)
+            except ActionPlanningError as error:
+                last_validation_error = error
+                failures.append(name + ":" + type(error).__name__)
             except Exception as error:
                 failures.append(name + ":" + type(error).__name__)
 
+        # Preserve a useful validation reason when providers returned plans but
+        # every plan was rejected. Provider transport failures remain generic.
+        if last_validation_error is not None:
+            raise last_validation_error
         raise ActionPlanningError(
             "All Action AI providers failed or returned an invalid plan."
         )
