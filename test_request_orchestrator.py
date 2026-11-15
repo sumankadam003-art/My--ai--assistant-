@@ -25,6 +25,17 @@ class RequestOrchestratorTests(unittest.TestCase):
             "Explain gravity", history=history, user_id="owner-1"
         )
 
+    def test_unsupported_action_returns_honest_message_without_gateway(self):
+        self.brain.plan.return_value = {
+            "status": "unsupported", "message": "That capability is not available yet.",
+            "steps": [], "missing_fields": [],
+        }
+        result = self.orchestrator.handle("Delete every file on my phone")
+        self.assertEqual(result["route"], "unsupported")
+        self.assertEqual(result["reply"], "That capability is not available yet.")
+        self.assertEqual(result["steps"], [])
+        self.gateway.ask.assert_not_called()
+
     def test_clarification_returns_question_without_gateway_or_execution(self):
         self.brain.plan.return_value = {
             "status": "clarification", "message": "Who is the recipient?",
