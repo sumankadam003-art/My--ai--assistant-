@@ -95,6 +95,29 @@ class AuthorizedActionServiceTests(unittest.TestCase):
             )
         self.assertEqual(self.calls, [])
 
+    def test_untyped_registered_plugin_is_blocked_before_approval(self):
+        plugins = ActionPluginManager()
+        plugins.register(
+            "custom.untyped",
+            "A plugin without capability metadata",
+            lambda: self.calls.append("custom") or "ran",
+            "custom.permission",
+            True,
+            "custom",
+        )
+        bridge = ActionEngineBridge(
+            plugins,
+            permission_checker=lambda actor, permission: True,
+        )
+        service = AuthorizedActionService(
+            bridge,
+            owner_authorizer=self.auth,
+            approval_store=ApprovalStore(ttl_seconds=60),
+        )
+        with self.assertRaisesRegex(ValueError, "trusted capability schema"):
+            service.request_approval("valid-session", "custom.untyped")
+        self.assertEqual(self.calls, [])
+
     def test_missing_approval_does_not_execute(self):
         result = self.service.execute(
             "valid-session", "open youtube"
