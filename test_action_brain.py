@@ -18,8 +18,9 @@ def encoded(status="action", steps=None, missing=None, message="Plan ready"):
 
 
 class ActionBrainTests(unittest.TestCase):
-    def test_default_provider_order_is_gemini_then_groq(self):
-        with patch.dict(os.environ, {}, clear=True):
+    def test_provider_order_is_fixed_to_gemini_then_groq(self):
+        # A stale environment override must not silently make Groq primary.
+        with patch.dict(os.environ, {"NEHA_ACTION_AI_PROVIDER_ORDER": "groq,gemini"}):
             brain = ActionBrain()
         self.assertEqual([name for name, _ in brain.providers], ["gemini", "groq"])
 
