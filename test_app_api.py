@@ -18,15 +18,17 @@ class FakeActionService:
         return [{"name": "safe test", "description": "A safe test action", "enabled": True}]
 
     def _find_action(self, action):
-        if action != "safe test":
+        if action not in ("safe test", "send_sms"):
             raise ValueError("This action is not registered.")
         return {"name": action, "enabled": True}
 
     @staticmethod
     def _validate_arguments(action, arguments):
-        if action != "safe test" or arguments != {}:
-            raise ValueError("Invalid arguments.")
-        return {}
+        if action == "safe test" and arguments == {}:
+            return {}
+        if action == "send_sms" and set(arguments) == {"recipient", "message"}:
+            return arguments
+        raise ValueError("Invalid arguments.")
 
     def request_approval(self, identity, action, arguments):
         return {"success": True, "approval_token": "single-use-token"}
@@ -37,7 +39,7 @@ class FakeActionService:
         self.executed.append(action)
         if action in self.fail_actions:
             return {"success": False, "status": "execution_failed", "action": action}
-        if action == "safe test" or action in app_api.MOBILE_ACTION_URLS:
+        if action in ("safe test", "send_sms") or action in app_api.MOBILE_ACTION_URLS:
             return {
                 "success": True,
                 "status": "executed_unverified",
@@ -213,6 +215,38 @@ class ActionAPIIntegrationTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(result["completed_steps"], 2)
         self.assertEqual(self.service.executed, ["safe test", "safe test"])
+
+    def test_chat_sms_plan_returns_review_payload_for_android_composer(self):
+        planned = {
+            "route": "action_plan", "reply": "I can prepare that SMS.",
+            "steps": [{
+                "legacy_action": "send_sms",
+                "arguments": {"recipient": "+919876543210", "message": "Hello"},
+            }],
+        }
+        with patch.object(app_api.request_orchestrator, "handle", return_value=planned):
+            _, proposal = self.request("POST", "/chat", {"message": "text this person"}, token="valid")
+        status, result = self.request("POST", "/chat/approve", {
+            "plan_id": proposal["pending_plan"]["plan_id"], "owner_confirmed": True,
+        }, token="valid")
+        self.assertEqual(status, 200)
+        self.assertEqual(result["sms_payload"], {
+            "recipient": "+919876543210", "message": "Hello",
+        })
+        self.assertEqual(self.service.executed, ["send_sms"])
+
+    def test_chat_sms_is_not_allowed_inside_multi_step_plan(self):
+        planned = {
+            "route": "action_plan", "reply": "Mixed plan.",
+            "steps": [
+                {"legacy_action": "safe test", "arguments": {}},
+                {"legacy_action": "send_sms", "arguments": {"recipient": "+919876543210", "message": "Hello"}},
+            ],
+        }
+        with patch.object(app_api.request_orchestrator, "handle", return_value=planned):
+            status, result = self.request("POST", "/chat", {"message": "do both"}, token="valid")
+        self.assertEqual(status, 400)
+        self.assertEqual(self.service.executed, [])
 
     def test_chat_clarification_does_not_create_pending_plan(self):
         with patch.object(app_api.request_orchestrator, "handle", return_value={
