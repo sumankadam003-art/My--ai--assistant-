@@ -4,7 +4,6 @@ This module proposes and validates plans only. It never executes tools,
 issues approvals, or treats model-provided risk/permission labels as authority.
 """
 import json
-import os
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 
 try:
@@ -50,16 +49,12 @@ class ActionBrain:
         if providers is not None:
             self.providers = list(providers)
         else:
-            available = {"groq": ask_groq, "gemini": ask_gemini}
-            configured = os.environ.get(
-                "NEHA_ACTION_AI_PROVIDER_ORDER", "gemini,groq"
-            )
-            names = [name.strip().lower() for name in configured.split(",") if name.strip()]
-            if not names or len(names) != len(set(names)) or any(name not in available for name in names):
-                raise ValueError(
-                    "NEHA_ACTION_AI_PROVIDER_ORDER must contain unique supported providers."
-                )
-            self.providers = [(name, available[name]) for name in names]
+            # Keep the agreed provider order deterministic: Gemini is primary,
+            # and Groq is used only when Gemini fails or returns an invalid plan.
+            self.providers = [
+                ("gemini", ask_gemini),
+                ("groq", ask_groq),
+            ]
         if not isinstance(platform, str) or not platform.strip():
             raise ValueError("A supported runtime platform is required.")
         self.platform = platform.strip().lower()
