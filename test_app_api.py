@@ -251,6 +251,21 @@ class ActionAPIIntegrationTests(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertEqual(self.service.executed, [])
 
+    def test_chat_unsupported_action_returns_honest_message_without_pending_plan(self):
+        with patch.object(app_api.request_orchestrator, "handle", return_value={
+            "route": "unsupported",
+            "reply": "That capability is not available yet.",
+            "steps": [],
+        }):
+            status, result = self.request(
+                "POST", "/chat", {"message": "Do an unsupported action"}, token="valid"
+            )
+        self.assertEqual(status, 200)
+        self.assertEqual(result["route"], "unsupported")
+        self.assertEqual(result["reply"], "That capability is not available yet.")
+        self.assertNotIn("pending_plan", result)
+        self.assertEqual(self.service.executed, [])
+
     def test_chat_clarification_does_not_create_pending_plan(self):
         with patch.object(app_api.request_orchestrator, "handle", return_value={
             "route": "clarification", "reply": "Who is the recipient?", "steps": []
