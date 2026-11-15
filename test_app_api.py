@@ -43,6 +43,7 @@ class FakeActionService:
 class ActionAPIIntegrationTests(unittest.TestCase):
     def setUp(self):
         self.service = FakeActionService()
+        app_api._pending_chat_actions.clear()
         class FakeAuth:
             def verify_session(self, token):
                 return {"id": "test-owner"} if token == "valid" else None
@@ -141,6 +142,40 @@ class ActionAPIIntegrationTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(result["status"], "action_unavailable")
         self.assertNotIn("launch_url", result)
+
+    def test_chat_action_requires_confirmation_then_executes(self):
+        with patch.object(app_api, "interpret_request", return_value={"type": "action", "action": "safe test"}):
+            status, proposal = self.request("POST", "/chat", {"message": "please do the safe test"}, token="valid")
+        self.assertEqual(status, 200)
+        self.assertIn("Should I do that?", proposal["reply"])
+        self.assertEqual(self.service.executed, [])
+
+        status, result = self.request("POST", "/chat", {"message": "yes"}, token="valid")
+        self.assertEqual(status, 200)
+        self.assertEqual(self.service.executed, ["safe test"])
+        self.assertIn("was launched", result["reply"])
+
+    def test_chat_action_can_be_cancelled_without_execution(self):
+        with patch.object(app_api, "interpret_request", return_value={"type": "action", "action": "safe test"}):
+            self.request("POST", "/chat", {"message": "do the safe test"}, token="valid")
+        status, result = self.request("POST", "/chat", {"message": "no"}, token="valid")
+        self.assertEqual(status, 200)
+        self.assertIn("cancelled", result["reply"])
+        self.assertEqual(self.service.executed, [])
+
+    def test_chat_history_is_forwarded_to_gateway(self):
+        with patch.object(app_api, "interpret_request", return_value={"type": "chat"}), patch.object(
+            app_api.gateway, "ask", return_value="Hello"
+        ) as ask:
+            status, result = self.request("POST", "/chat", {
+                "message": "hello",
+                "history": [{"role": "user", "content": "Earlier message"}],
+            }, token="valid")
+        self.assertEqual(status, 200)
+        self.assertEqual(result["reply"], "Hello")
+        self.assertEqual(ask.call_args.kwargs["history"], [
+            {"role": "user", "content": "Earlier message"}
+        ])
 
     def test_challenge_login_routes_are_available(self):
         status, challenge = self.request("POST", "/auth/challenge", {})
