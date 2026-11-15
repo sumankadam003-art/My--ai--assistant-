@@ -13,9 +13,10 @@ class NehaGateway:
     """Central gateway for AI providers and local/cloud memory."""
 
     def __init__(self):
+        # Gemini is the primary conversational model; Groq is the fallback.
         self.providers = [
-            ("groq", ask_groq),
             ("gemini", ask_gemini),
+            ("groq", ask_groq),
         ]
 
     @staticmethod

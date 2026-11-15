@@ -47,7 +47,11 @@ class AppAPISecurityTests(unittest.TestCase):
         self.assertEqual(response.status_code, 401)
 
     @patch("src.app_api.gateway.ask", return_value="Hello from Neha")
-    def test_chat_works_with_valid_session(self, ask):
+    @patch("src.app_api.request_orchestrator.action_brain.plan", return_value={
+        "status": "not_action", "message": "Not an action",
+        "steps": [], "missing_fields": [],
+    })
+    def test_chat_works_with_valid_session(self, plan, ask):
         import httpx
         token = self.login()
         response = httpx.post(self.base + "/chat", json={"message": "hello"},
@@ -69,7 +73,8 @@ class AppAPISecurityTests(unittest.TestCase):
         import httpx
         for method, path in (("GET", "/actions"), ("POST", "/memory/save"),
                              ("POST", "/memory/load"), ("POST", "/actions/approve"),
-                             ("POST", "/actions/execute")):
+                             ("POST", "/actions/execute"), ("POST", "/chat/approve"),
+                             ("POST", "/chat/cancel")):
             response = httpx.request(method, self.base + path, json={} if method == "POST" else None, timeout=3)
             self.assertEqual(response.status_code, 401, path)
 

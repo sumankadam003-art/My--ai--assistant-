@@ -6,7 +6,7 @@ import urllib.error
 from pathlib import Path
 
 KEY_FILE = Path.home() / ".config/neha-assistant/.env"
-MODEL = "gemini-3.5-flash"
+MODEL = "gemini-3.8-flash"
 
 MAX_RESPONSE_BYTES = 1_048_576
 MAX_PROMPT_CHARS = 20_000

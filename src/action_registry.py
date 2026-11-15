@@ -7,6 +7,48 @@ except ImportError:
     from plugin_manager import ActionPluginManager
 
 
+_ACTION_FAILURE_PREFIXES = (
+    "Volume control unavailable.",
+    "Volume control timed out.",
+    "Volume control failed",
+    "Could not read volume information.",
+    "Camera unavailable:",
+    "Could not open camera.",
+    "Could not open the camera.",
+    "Camera launch timed out.",
+    "I don't know that action yet.",
+    "App '",
+    "Required command '",
+    "Action timed out.",
+    "Received invalid data from the Android service.",
+    "Action failed",
+)
+
+
+def _run_checked_action(command):
+    """Turn known legacy failure messages into execution failures.
+
+    The legacy Termux adapters return strings for both success and failure.
+    ActionEngine otherwise treats every returned string as a completed handler.
+    Until adapters expose typed outcomes, fail closed for their known error
+    messages so the API cannot report these actions as completed.
+    """
+    result = run_action(command)
+    if not isinstance(result, str) or not result.strip():
+        raise RuntimeError("The device action returned no usable result.")
+    lowered = result.strip().lower()
+    failure_markers = (
+        " failed", "failure", " unavailable", "could not ", "couldn't ",
+        "not found", "isn't configured", "timed out", "invalid data",
+        "error:", " error ", "don't know that action",
+    )
+    if result.startswith(_ACTION_FAILURE_PREFIXES) or any(
+        marker in lowered for marker in failure_markers
+    ):
+        raise RuntimeError(result)
+    return result
+
+
 MOBILE_ACTION_URLS = {
     "open youtube": "https://www.youtube.com",
     "open google": "https://www.google.com",
@@ -46,7 +88,7 @@ def build_default_action_manager(*, mobile_url_launch=False):
         elif mobile_url_launch and name in MOBILE_ACTION_URLS:
             handler = lambda: "Mobile launch authorized."
         else:
-            handler = lambda command=command: run_action(command)
+            handler = lambda command=command: _run_checked_action(command)
 
         manager.register(
             name=name,

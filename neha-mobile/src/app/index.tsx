@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import API_URL from '../apiConfig';
 import {
-  Alert, View, Text, TextInput, TouchableOpacity, ScrollView,
+  Alert, Linking, View, Text, TextInput, TouchableOpacity, ScrollView,
   StyleSheet, StatusBar, KeyboardAvoidingView, Platform, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { getAccessToken, getChallenge, login, logout } from '../auth';
+import * as SMS from 'expo-sms';
 
 type Message = {
   id: string;
@@ -57,6 +58,61 @@ export default function HomeScreen() {
   }, []);
 
 
+  async function approveChatPlan(planId: string) {
+    const token = await getAccessToken();
+    if (!token) {
+      setMessages(old => [...old, { id: String(Date.now()) + '-approval-login', text: 'Your owner session is missing. Sign in again before approving this plan.', from: 'neha' }]);
+      return;
+    }
+    setMode('EXECUTING');
+    try {
+      const response = await fetch(`${API_URL}/chat/approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ plan_id: planId, owner_confirmed: true }),
+      });
+      const data = await response.json();
+      if (response.status === 401) {
+        await logout();
+        throw new Error('Your owner session expired. Sign in again.');
+      }
+      if (!response.ok) throw new Error(data.error || 'The approved plan could not be completed.');
+      if (data.sms_payload && typeof data.sms_payload.recipient === 'string' && typeof data.sms_payload.message === 'string') {
+        const available = await SMS.isAvailableAsync();
+        if (!available) throw new Error('No SMS app is available on this device.');
+        const smsResult = await SMS.sendSMSAsync([data.sms_payload.recipient], data.sms_payload.message);
+        const smsNotice = smsResult.result === 'cancelled'
+          ? 'SMS composer was cancelled. No message was sent from this flow.'
+          : 'SMS composer opened. Review the recipient and message, then press Send yourself. Neha cannot verify delivery.';
+        setMessages(old => [...old, { id: String(Date.now()) + '-sms-result', text: smsNotice, from: 'neha' }]);
+      }
+      if (Array.isArray(data.launch_urls)) {
+        for (const url of data.launch_urls) {
+          if (typeof url === 'string') await Linking.openURL(url);
+        }
+      }
+      setMessages(old => [...old, { id: String(Date.now()) + '-plan-result', text: String(data.reply || 'Action plan finished.'), from: 'neha' }]);
+      setMode('ONLINE');
+    } catch (error) {
+      setMessages(old => [...old, { id: String(Date.now()) + '-plan-error', text: error instanceof Error ? error.message : 'Action plan failed.', from: 'neha' }]);
+      setMode('ONLINE');
+    }
+  }
+
+  async function cancelChatPlan(planId: string) {
+    const token = await getAccessToken();
+    if (!token) return;
+    try {
+      await fetch(`${API_URL}/chat/cancel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ plan_id: planId }),
+      });
+    } catch {
+      // The server-side plan also expires automatically.
+    }
+  }
+
   async function sendMessage(override?: string) {
     const value = (override ?? input).trim();
     if (!value) return;
@@ -80,7 +136,11 @@ export default function HomeScreen() {
     setInput('');
     setMode('THINKING');
     try {
-      const response = await fetch(`${API_URL}/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ message: value }) });
+      const history = messages.slice(-40).map(item => ({
+        role: item.from === 'user' ? 'user' : 'assistant',
+        content: item.text,
+      }));
+      const response = await fetch(`${API_URL}/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ message: value, history }) });
       const data = await response.json();
       if (response.status === 401) {
         await logout();
@@ -94,6 +154,27 @@ export default function HomeScreen() {
       }
       if (!response.ok) throw new Error();
       setMessages(old => [...old, { id: String(Date.now()) + '-reply', text: String(data.reply), from: 'neha' }]);
+      if (data.pending_plan && typeof data.pending_plan.plan_id === 'string' && Array.isArray(data.pending_plan.steps)) {
+        const details = data.pending_plan.steps.map((step: { action?: string; arguments?: Record<string, string> }, index: number) =>
+          `${index + 1}. ${String(step.action || 'Unknown action')}\n${JSON.stringify(step.arguments || {})}`
+        ).join('\n\n');
+        Alert.alert(
+          'Review action plan',
+          `Neha proposes these actions:\n\n${details}\n\nYour signed-in owner session and explicit approval are required. Actions run in order; if a later step fails, earlier steps may already have happened.`,
+          [
+            { text: 'Cancel', style: 'cancel', onPress: () => { void cancelChatPlan(data.pending_plan.plan_id); } },
+            { text: 'Approve plan', style: 'default', onPress: () => { void approveChatPlan(data.pending_plan.plan_id); } },
+          ],
+          { cancelable: false },
+        );
+      }
+      if (typeof data.launch_url === 'string') {
+        try {
+          await Linking.openURL(data.launch_url);
+        } catch {
+          setMessages(old => [...old, { id: String(Date.now()) + '-launch-error', text: 'The action was approved, but Android could not open the requested app link.', from: 'neha' }]);
+        }
+      }
       setMode('ONLINE');
     } catch {
       setMessages(old => [...old, { id: String(Date.now()) + '-error', text: 'Could not connect to Neha AI. Check that the API server is running.', from: 'neha' }]);
