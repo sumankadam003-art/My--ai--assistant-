@@ -52,7 +52,18 @@ class ShieldRenewalTests(unittest.TestCase):
         adapter = FakeAdapter(state)
         result = ShieldRenewalCoordinator(adapter, self.manager).run_once(now=self.now)
         self.assertEqual(result.state, "not_due")
+        self.assertEqual(result.next_check_seconds, int((timedelta(hours=2) - timedelta(minutes=3)).total_seconds()))
         self.assertEqual(adapter.activated, [])
+
+    def test_one_second_checks_are_used_inside_three_minute_review_window(self):
+        state = GameShieldState(
+            True, self.now + timedelta(minutes=2),
+            (ShieldItem("8h", 28800, 1),),
+        )
+        adapter = FakeAdapter(state)
+        result = ShieldRenewalCoordinator(adapter, self.manager).run_once(now=self.now)
+        self.assertEqual(result.state, "activation_unverified")
+        self.assertEqual(result.next_check_seconds, 1)
 
     def test_renews_inside_lead_window_and_verifies_expiry(self):
         old_expiry = self.now + timedelta(minutes=10)
