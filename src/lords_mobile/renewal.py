@@ -85,6 +85,8 @@ class ShieldRenewalCoordinator:
         self.adapter = adapter
         self.timer_manager = timer_manager
         self.config = config or RenewalConfig()
+        # Prevent repeated item consumption attempts for the same observed expiry.
+        self._last_attempt_key = None
 
     @staticmethod
     def _now(value=None):
@@ -134,6 +136,15 @@ class ShieldRenewalCoordinator:
                 next_check_seconds=max(1, until_due),
             )
 
+        attempt_key = old_expiry.isoformat() if old_expiry is not None else "inactive"
+        if self._last_attempt_key == attempt_key:
+            return RenewalResult(
+                "activation_unverified",
+                seconds_remaining=remaining,
+                next_check_seconds=self.config.poll_interval_seconds,
+                detail="A previous activation attempt for this same shield state was not verified; no second item will be consumed.",
+            )
+
         item = self._select_item(before.inventory)
         if item is None:
             return RenewalResult(
@@ -143,6 +154,9 @@ class ShieldRenewalCoordinator:
                 detail="No usable shield item was found in the observed inventory.",
             )
 
+        # Latch before interacting: an exception or uncertain UI result must not
+        # cause another item to be consumed on the next one-second check.
+        self._last_attempt_key = attempt_key
         try:
             attempt = self.adapter.activate_shield(item.item_id)
         except Exception:
