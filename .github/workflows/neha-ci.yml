@@ -47,6 +47,10 @@ jobs:
               for path in glob.glob("test_*.py")
               if path[:-3] not in excluded
           ]
+          modules.extend([
+              "tests.test_lords_mobile_shield",
+              "tests.test_lords_mobile_renewal",
+          ])
           suite = unittest.TestSuite(
               loader.loadTestsFromName(module) for module in modules
           )
