@@ -66,7 +66,7 @@ class ShieldRenewalTests(unittest.TestCase):
         self.assertEqual(result.next_check_seconds, 1)
 
     def test_renews_inside_lead_window_and_verifies_expiry(self):
-        old_expiry = self.now + timedelta(minutes=10)
+        old_expiry = self.now + timedelta(minutes=2)
         new_expiry = old_expiry + timedelta(hours=24)
         before = GameShieldState(True, old_expiry, (
             ShieldItem("3d", 259200, 1),
