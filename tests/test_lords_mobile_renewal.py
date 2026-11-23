@@ -100,11 +100,14 @@ class ShieldRenewalTests(unittest.TestCase):
         self.assertIsNone(self.manager.status(now=self.now))
 
     def test_unchanged_expiry_is_unverified_and_not_retried(self):
-        old_expiry = self.now + timedelta(minutes=5)
+        old_expiry = self.now + timedelta(minutes=2)
         state = GameShieldState(True, old_expiry, (ShieldItem("8h", 28800, 1),))
         adapter = FakeAdapter(state, state)
-        result = ShieldRenewalCoordinator(adapter, self.manager).run_once(now=self.now)
+        coordinator = ShieldRenewalCoordinator(adapter, self.manager)
+        result = coordinator.run_once(now=self.now)
         self.assertEqual(result.state, "activation_unverified")
+        second = coordinator.run_once(now=self.now + timedelta(seconds=1))
+        self.assertEqual(second.state, "activation_unverified")
         self.assertEqual(len(adapter.activated), 1)
 
     def test_game_read_failure_fails_closed(self):
