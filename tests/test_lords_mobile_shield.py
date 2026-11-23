@@ -1,4 +1,3 @@
-import json
 import tempfile
 import unittest
 from datetime import datetime, timezone
@@ -11,7 +10,7 @@ from src.lords_mobile.timer import TimerParseError, parse_duration_text
 
 class ShieldTimerTests(unittest.TestCase):
     def test_parse_compound_duration(self):
-        self.assertEqual(parse_duration_text("2d 4h 15m 9s"), 187_209)
+        self.assertEqual(parse_duration_text("2d 4h 15m 9s"), 188_109)
 
     def test_parse_clock_duration(self):
         self.assertEqual(parse_duration_text("04:15:09"), 15_309)
