@@ -8,8 +8,8 @@ but no live game adapter has been implemented yet.
 
 ### Implemented
 - Strict parsing of shield countdowns and timezone-aware expiry tracking.
-- Configurable renewal lead time (default: 15 minutes).
-- Configurable polling interval (default: 30 seconds).
+- Configurable renewal lead time (default: 3 minutes).
+- One-second checks during the final 3-minute review window; before that, the engine sleeps until the review window begins.
 - Inventory selection that prefers the shortest available shield item.
 - A one-attempt activation policy per check; an uncertain attempt is never blindly retried.
 - Mandatory read-back verification: renewal is reported only when a fresh game
@@ -39,8 +39,10 @@ connected. Do not rely on it for castle protection yet.
 - The engine does not access game credentials, private APIs, or modify game files.
 
 ### Configuration
-The default lead time is 15 minutes and the default poll interval is 30 seconds.
-Both are configurable through `RenewalConfig`. The engine selects the shortest
+The default lead time is 3 minutes and the polling interval inside that window is 1 second.
+Before the review window, the coordinator schedules its next check for the exact
+start of the window rather than polling continuously. Both values are configurable
+through `RenewalConfig`. The engine selects the shortest
 available item with a positive quantity; actual item recognition and mapping
 must be supplied by the game adapter.
 
