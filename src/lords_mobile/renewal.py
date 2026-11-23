@@ -51,14 +51,14 @@ class ShieldGameAdapter(Protocol):
 
 @dataclass(frozen=True)
 class RenewalConfig:
-    lead_time_seconds: int = 15 * 60
-    poll_interval_seconds: int = 30
+    lead_time_seconds: int = 3 * 60
+    poll_interval_seconds: int = 1
     minimum_extension_seconds: int = 60
 
     def __post_init__(self):
         if not isinstance(self.lead_time_seconds, int) or not 60 <= self.lead_time_seconds <= 24 * 60 * 60:
             raise ValueError("lead_time_seconds must be between 60 and 86400.")
-        if not isinstance(self.poll_interval_seconds, int) or not 5 <= self.poll_interval_seconds <= 3600:
+        if not isinstance(self.poll_interval_seconds, int) or not 1 <= self.poll_interval_seconds <= 3600:
             raise ValueError("poll_interval_seconds must be between 5 and 3600.")
         if not isinstance(self.minimum_extension_seconds, int) or self.minimum_extension_seconds < 1:
             raise ValueError("minimum_extension_seconds must be positive.")
@@ -69,7 +69,7 @@ class RenewalResult:
     state: str
     seconds_remaining: Optional[int] = None
     selected_item_id: Optional[str] = None
-    next_check_seconds: int = 30
+    next_check_seconds: int = 1
     detail: str = ""
 
 
@@ -131,7 +131,7 @@ class ShieldRenewalCoordinator:
             return RenewalResult(
                 "not_due",
                 seconds_remaining=remaining,
-                next_check_seconds=min(self.config.poll_interval_seconds, max(1, until_due)),
+                next_check_seconds=max(1, until_due),
             )
 
         item = self._select_item(before.inventory)
