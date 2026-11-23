@@ -1,44 +1,51 @@
 # Neha — Lords Mobile Manager
 
-## First milestone: shield timer foundation
+## Shield renewal engine milestone
 
-This isolated package adds a local shield countdown tracker. It is deliberately
-separate from Neha's chat, action registry, authentication, memory, and mobile UI.
+This branch now contains a recurring renewal policy engine in addition to the
+local countdown tracker. It is designed to work with a real Android/game adapter,
+but no live game adapter has been implemented yet.
 
-### Included
-- Strict parsing of durations such as `2d 4h 15m` and `04:15:09`.
-- Local expiry calculation using timezone-aware timestamps.
-- Active / expiring / expired status and a configurable reminder threshold.
-- Atomic JSON persistence with restrictive file permissions where supported.
-- Unit tests using only Python's standard library.
+### Implemented
+- Strict parsing of shield countdowns and timezone-aware expiry tracking.
+- Configurable renewal lead time (default: 15 minutes).
+- Configurable polling interval (default: 30 seconds).
+- Inventory selection that prefers the shortest available shield item.
+- A one-attempt activation policy per check; an uncertain attempt is never blindly retried.
+- Mandatory read-back verification: renewal is reported only when a fresh game
+  observation confirms the shield is active and its expiry has advanced.
+- A polling loop that can be hosted by an Android foreground service or another
+  process supervisor.
+- Atomic local timer persistence with restrictive permissions where supported.
 
-### Not included yet
-- Live screen capture or OCR.
-- Android notification scheduling.
-- Game taps, macros, or automatic shield activation.
-- Game account credentials or network/API access.
+### Still required before this can renew shields in the actual game
+- An Android integration capable of reading the real Lords Mobile screen/state.
+- An accessibility/UI adapter that can safely select and activate the chosen item.
+- A foreground-service/worker host that Android will keep running reliably.
+- Device testing for screen layouts, dialogs, loading delays, game updates, and
+  background restrictions.
 
-The timer must be based on a confirmed observation. Neha must not claim a shield
-was renewed merely because an action was attempted. Future Android integration
-must separately verify the resulting in-game shield state.
+**This is not yet end-to-end automatic renewal.** The coordinator is the policy
+and verification layer. It cannot control Lords Mobile until a real adapter is
+connected. Do not rely on it for castle protection yet.
 
-### Run tests from the repository root
+### Safety behavior
+- If game state cannot be read, no activation is attempted.
+- If no usable shield item is visible, no activation is attempted.
+- Only one activation attempt is made per polling cycle.
+- A tap or UI response is not treated as proof of renewal.
+- If read-back verification fails, the result is `activation_unverified`; the
+  engine does not immediately tap again and risk consuming another item.
+- The engine does not access game credentials, private APIs, or modify game files.
+
+### Configuration
+The default lead time is 15 minutes and the default poll interval is 30 seconds.
+Both are configurable through `RenewalConfig`. The engine selects the shortest
+available item with a positive quantity; actual item recognition and mapping
+must be supplied by the game adapter.
+
+### Tests
 
 ```bash
-python -m unittest tests.test_lords_mobile_shield -v
-```
-
-### Example use
-
-```python
-from pathlib import Path
-from datetime import datetime, timezone
-from src.lords_mobile import ShieldStore, ShieldTimerManager
-
-manager = ShieldTimerManager(
-    ShieldStore(Path("data/lords_mobile/shield_state.json")),
-    warning_minutes=30,
-)
-manager.record_observation("8h 00m", observed_at=datetime.now(timezone.utc))
-print(manager.status())
+python -m unittest tests.test_lords_mobile_shield tests.test_lords_mobile_renewal -v
 ```
