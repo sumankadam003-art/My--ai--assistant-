@@ -44,6 +44,24 @@ class ShieldTimerManager:
         })
         return expiry
 
+    def record_expiry(self, expires_at: datetime, *, observed_at=None, source="verified") -> datetime:
+        """Persist an exact expiry read back from a trusted game adapter."""
+        now = self._now(observed_at)
+        if not isinstance(expires_at, datetime) or expires_at.tzinfo is None:
+            raise ValueError("expires_at must be timezone-aware.")
+        expiry = expires_at.astimezone(timezone.utc)
+        seconds = int((expiry - now).total_seconds())
+        if seconds <= 0 or seconds > 366 * 86400:
+            raise ValueError("Verified expiry must be in the future and within 366 days.")
+        self.store.save({
+            "version": 1,
+            "observed_at": now.isoformat(),
+            "expires_at": expiry.isoformat(),
+            "source": str(source)[:40],
+            "duration_seconds": seconds,
+        })
+        return expiry
+
     def status(self, *, now=None) -> Optional[ShieldStatus]:
         saved = self.store.load()
         if saved is None:
