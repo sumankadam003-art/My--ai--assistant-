@@ -1,7 +1,7 @@
-"""Lords Mobile companion utilities for Neha.
+"""Lords Mobile shield tracking and verified-renewal policy for Neha.
 
-This package starts with local shield-time tracking. It does not inject into,
-modify, or send commands to the game client.
+The package defines a platform-neutral coordinator. It requires a separately
+implemented Android/game adapter before it can interact with Lords Mobile.
 """
 from .manager import ShieldStatus, ShieldTimerManager
 from .renewal import (
